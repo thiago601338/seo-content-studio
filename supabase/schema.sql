@@ -5,7 +5,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.article_jobs (
   id uuid primary key default gen_random_uuid(),
-  quantity integer not null check (quantity between 1 and 20),
+  quantity integer not null check (quantity between 1 and 120),
   keyword text not null,
   link_url text not null,
   create_cover boolean not null default true,
@@ -18,6 +18,10 @@ create table if not exists public.article_jobs (
   started_at timestamptz,
   completed_at timestamptz
 );
+
+-- Mantém projetos já existentes compatíveis com o novo limite de 120 textos por lote.
+alter table public.article_jobs drop constraint if exists article_jobs_quantity_check;
+alter table public.article_jobs add constraint article_jobs_quantity_check check (quantity between 1 and 120);
 
 create table if not exists public.articles (
   id uuid primary key default gen_random_uuid(),

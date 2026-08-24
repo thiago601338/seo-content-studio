@@ -83,6 +83,57 @@ export function countWords(text = '') {
   return clean ? clean.split(/\s+/).length : 0
 }
 
+
+function capHtmlAtWordLimit(html, maxWords = 800, keyword = '') {
+  const source = String(html || '').trim()
+  if (countWords(stripHtml(source)) <= maxWords) return source
+
+  // Trabalha com uma pequena margem para garantir que o resultado final,
+  // inclusive com o link inserido, continue abaixo do limite solicitado.
+  const safeLimit = Math.max(1, maxWords - 5)
+  const blockRegex = /<(p|h2|h3|ul|ol|blockquote)\b[^>]*>[\s\S]*?<\/\1>/gi
+  const blocks = source.match(blockRegex) || []
+  const kept = []
+  let words = 0
+
+  for (const block of blocks) {
+    const blockWords = countWords(stripHtml(block))
+    if (words + blockWords > safeLimit) break
+    kept.push(block)
+    words += blockWords
+  }
+
+  // Evita terminar com subtítulo sem conteúdo abaixo dele.
+  while (kept.length && /^<h[23]\b/i.test(kept[kept.length - 1])) kept.pop()
+
+  let output = kept.join('\n').trim()
+
+  // Fallback para HTML atípico: devolve texto válido e limitado.
+  if (!output) {
+    let plain = stripHtml(source).split(/\s+/).slice(0, safeLimit).join(' ')
+    if (!plain.includes('[[ANCHOR_LINK]]')) {
+      const escaped = String(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = escaped ? new RegExp(escaped, 'i') : null
+      if (regex?.test(plain)) plain = plain.replace(regex, '[[ANCHOR_LINK]]')
+      else plain = `[[ANCHOR_LINK]] ${plain}`.trim()
+    }
+    output = `<p>${escapeHtml(plain)}</p>`
+  }
+
+  // Se o corte removeu o token de link, tenta recolocá-lo de forma segura.
+  if (source.includes('[[ANCHOR_LINK]]') && !output.includes('[[ANCHOR_LINK]]')) {
+    const escaped = String(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = escaped ? new RegExp(escaped, 'i') : null
+    if (regex?.test(output)) {
+      output = output.replace(regex, '[[ANCHOR_LINK]]')
+    } else {
+      output = output.replace(/<p\b[^>]*>/i, (tag) => `${tag}[[ANCHOR_LINK]] `)
+    }
+  }
+
+  return output
+}
+
 export async function generateSeoArticle({ keyword, linkUrl, keywordInTitle, index, quantity, previousTitles = [] }) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY não configurada no Netlify.')
@@ -105,7 +156,7 @@ Regras obrigatórias:
 - responda à intenção de busca logo no começo e aprofunde o tema ao longo do texto;
 - use informações plausíveis e duráveis; não invente estudos, estatísticas, especialistas, leis, cotações ou fatos atuais;
 - não diga que é IA, não explique o processo e não inclua notas ao editor;
-- entregue um artigo entre aproximadamente 1.200 e 1.600 palavras;
+- entregue um artigo com aproximadamente 650 a 780 palavras e NUNCA ultrapasse 800 palavras no html_content;
 - não use <h1> no html_content, pois o título será publicado separadamente;
 - use <p>, <h2>, <h3>, <ul>, <ol>, <strong> e <blockquote> apenas quando fizer sentido;
 - inclua perguntas frequentes somente se melhorarem o conteúdo, evitando formato mecânico em todos os artigos;
@@ -173,6 +224,7 @@ Varie o enfoque, exemplos, estrutura e título em relação aos demais artigos d
     article.title = `${keyword}: ${title}`
   }
 
+  article.html_content = capHtmlAtWordLimit(article.html_content, 800, keyword)
   article.html_content = finalizeArticleHtml(article.html_content, keyword, linkUrl)
   return article
 }

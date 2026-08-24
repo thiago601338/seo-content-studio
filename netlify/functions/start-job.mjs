@@ -13,8 +13,8 @@ export default async (req) => {
     const createCover = Boolean(body.createCover)
     const keywordInTitle = Boolean(body.keywordInTitle)
 
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
-      const error = new Error('A quantidade deve ser de 1 a 20 textos por lote.')
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 120) {
+      const error = new Error('A quantidade deve ser de 1 a 120 textos por lote.')
       error.status = 400
       throw error
     }

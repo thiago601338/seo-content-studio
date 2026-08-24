@@ -3,6 +3,25 @@ import { assertAuthorized, parseJson } from './_lib/http.mjs'
 import { getSupabaseAdmin } from './_lib/supabase.mjs'
 import { countWords, generateCoverImage, generateSeoArticle, slugify, stripHtml } from './_lib/seo.mjs'
 
+const TERMINAL_STATUSES = new Set(['completed', 'completed_with_errors', 'failed'])
+
+async function continueJob(req, jobId) {
+  const origin = new URL(req.url).origin
+  const response = await fetch(`${origin}/api/generate-background`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-app-password': process.env.APP_PASSWORD || '',
+    },
+    body: JSON.stringify({ jobId }),
+  })
+
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(`Não foi possível continuar o lote automaticamente (${response.status}): ${detail}`)
+  }
+}
+
 export default async (req) => {
   let jobId = null
   const supabase = getSupabaseAdmin()
@@ -20,19 +39,37 @@ export default async (req) => {
       .single()
     if (jobError) throw jobError
 
-    if (job.status !== 'queued') return
+    if (TERMINAL_STATUSES.has(job.status)) return
+    if (!['queued', 'processing'].includes(job.status)) return
 
-    await supabase
-      .from('article_jobs')
-      .update({ status: 'processing', started_at: new Date().toISOString(), error_message: null })
-      .eq('id', jobId)
+    if (job.status === 'queued') {
+      await supabase
+        .from('article_jobs')
+        .update({ status: 'processing', started_at: new Date().toISOString(), error_message: null })
+        .eq('id', jobId)
+    }
 
-    const titles = []
-    let completed = 0
-    let failed = 0
-    const errors = []
+    // Um lote de até 120 textos é dividido em blocos menores. Isso evita manter
+    // uma única Background Function do Netlify aberta durante todo o lote.
+    const chunkSize = job.create_cover ? 3 : 6
+    let completed = Number(job.completed_count || 0)
+    let failed = Number(job.failed_count || 0)
+    const alreadyProcessed = completed + failed
+    const startIndex = alreadyProcessed + 1
+    const endIndex = Math.min(job.quantity, alreadyProcessed + chunkSize)
 
-    for (let index = 1; index <= job.quantity; index += 1) {
+    const { data: existingArticles, error: titlesError } = await supabase
+      .from('articles')
+      .select('title')
+      .eq('job_id', job.id)
+      .order('created_at', { ascending: false })
+      .limit(12)
+    if (titlesError) throw titlesError
+
+    const titles = (existingArticles || []).map((item) => item.title).filter(Boolean)
+    const errors = job.error_message ? job.error_message.split('\n').filter(Boolean).slice(-5) : []
+
+    for (let index = startIndex; index <= endIndex; index += 1) {
       try {
         const article = await generateSeoArticle({
           keyword: job.keyword,
@@ -40,7 +77,7 @@ export default async (req) => {
           keywordInTitle: job.keyword_in_title,
           index,
           quantity: job.quantity,
-          previousTitles: titles,
+          previousTitles: titles.slice(-12),
         })
 
         titles.push(article.title)
@@ -98,6 +135,12 @@ export default async (req) => {
           error_message: errors.length ? errors.slice(-5).join('\n') : null,
         })
         .eq('id', jobId)
+    }
+
+    const processed = completed + failed
+    if (processed < job.quantity) {
+      await continueJob(req, jobId)
+      return
     }
 
     const status = completed === 0 ? 'failed' : failed > 0 ? 'completed_with_errors' : 'completed'

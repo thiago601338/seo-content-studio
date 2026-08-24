@@ -6,7 +6,7 @@ Sistema privado para gerar artigos SEO em lote usando a API da OpenAI, com hist�
 
 Na tela de criação você informa somente:
 
-- quantidade de textos (1 a 20);
+- quantidade de textos (1 a 120);
 - se deve criar imagem de capa;
 - palavra-chave;
 - URL que será aplicada nessa palavra-chave;
@@ -14,7 +14,7 @@ Na tela de criação você informa somente:
 
 O sistema então:
 
-1. cria artigos em português do Brasil com cerca de 1.200 a 1.600 palavras;
+1. cria artigos em português do Brasil com até 800 palavras (alvo aproximado de 650 a 780);
 2. estrutura o conteúdo com introdução, H2/H3, listas quando úteis e boa escaneabilidade;
 3. cria meta description e resumo;
 4. insere exatamente um link na palavra-chave, de forma natural;
@@ -174,3 +174,11 @@ npm run dev
 ```
 
 Para testar as Functions localmente com comportamento mais próximo do Netlify, use o Netlify CLI e as mesmas variáveis do `.env.example`.
+
+## Atualização para 120 textos por lote
+
+Se você já executou o `supabase/schema.sql` anteriormente, rode uma vez no SQL Editor do Supabase o arquivo:
+
+`supabase/update-limit-120.sql`
+
+O processamento de lotes grandes é dividido automaticamente em blocos menores para reduzir o risco de timeout das Background Functions do Netlify. Cada artigo é orientado a ficar entre cerca de 650 e 780 palavras, com limite máximo de 800 palavras no conteúdo.

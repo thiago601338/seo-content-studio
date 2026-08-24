@@ -255,11 +255,11 @@ export default function App() {
 
               <div className="fields-grid">
                 <label>
-                  Quantidade de textos
+                  Quantidade de textos (1 a 120)
                   <input
                     type="number"
                     min="1"
-                    max="20"
+                    max="120"
                     value={form.quantity}
                     onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                     required
