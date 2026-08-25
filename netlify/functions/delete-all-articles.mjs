@@ -10,25 +10,17 @@ export default async (req) => {
     assertAuthorized(req)
     const supabase = getSupabaseAdmin()
 
-    const { data: activeJobs, error: activeError } = await supabase
-      .from('article_jobs')
-      .select('id')
-      .in('status', ['queued', 'processing'])
-      .limit(1)
-
-    if (activeError) throw activeError
-    if (activeJobs?.length) {
-      const error = new Error('Há uma geração em andamento. Aguarde ela terminar antes de excluir todos os textos.')
-      error.status = 409
-      throw error
-    }
-
+    // Congela o conjunto a ser apagado no instante do clique. Assim a ação
+    // termina mesmo se algum job ativo criar novos artigos depois.
+    const cutoff = new Date().toISOString()
     let deleted = 0
+    let storageWarnings = 0
 
     while (true) {
       const { data: articles, error: readError } = await supabase
         .from('articles')
         .select('id,cover_image_path')
+        .lte('created_at', cutoff)
         .order('created_at', { ascending: true })
         .limit(PAGE_SIZE)
 
@@ -40,7 +32,10 @@ export default async (req) => {
         const { error: storageError } = await supabase.storage
           .from('article-images')
           .remove(paths.slice(i, i + STORAGE_CHUNK))
-        if (storageError) throw storageError
+        if (storageError) {
+          storageWarnings += 1
+          console.error('Falha ao remover algumas capas durante exclusão em massa:', storageError)
+        }
       }
 
       const ids = articles.map((item) => item.id)
@@ -49,7 +44,7 @@ export default async (req) => {
       deleted += ids.length
     }
 
-    return json({ ok: true, deleted })
+    return json({ ok: true, deleted, cutoff, storageWarnings })
   } catch (error) {
     return handleError(error)
   }

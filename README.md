@@ -215,3 +215,13 @@ Depois publique os arquivos desta versão no GitHub/Netlify. Não é necessário
 A área **Gerações** consulta os jobs diretamente no Supabase a cada poucos segundos, portanto todos os lotes com status **Na fila**, **Em andamento**, **Pausando** ou **Pausada** continuam visíveis mesmo depois de recarregar o site.
 
 A pausa é cooperativa: se a solicitação chegar enquanto a OpenAI já está criando um texto (ou uma capa), esse item pode terminar e ser salvo. O worker então reconhece a pausa e não inicia o próximo item. Isso evita interromper um artigo pela metade e permite retomar do ponto já concluído.
+
+## Correção: pausa imediata + exclusão com geração ativa
+
+Esta versão corrige dois comportamentos da versão anterior:
+
+- **Pausa imediata:** o job muda para `paused` na própria requisição de pausa. A coluna `run_version` invalida workers antigos, impedindo que uma execução anterior grave novos textos após a pausa.
+- **Excluir todos:** a exclusão não é mais bloqueada por jobs ativos. O backend apaga somente os textos que já existiam no instante do clique; se uma geração continuar ativa, textos criados depois desse instante podem voltar a aparecer.
+- **Excluir um texto:** uma falha ao remover a imagem do Storage não impede a exclusão do texto da biblioteca.
+
+Para atualizar uma instalação existente, execute primeiro `supabase/update-pausa-exclusao-fix.sql` no SQL Editor do Supabase e depois publique esta versão no Netlify.

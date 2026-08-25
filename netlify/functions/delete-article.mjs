@@ -17,15 +17,24 @@ export default async (req) => {
       .from('articles')
       .select('id,cover_image_path')
       .eq('id', id)
-      .single()
+      .maybeSingle()
     if (readError) throw readError
 
+    // Se já foi apagado em outra aba, tratamos como sucesso.
+    if (!article) return json({ ok: true, alreadyDeleted: true })
+
+    // O texto é a fonte principal; uma eventual falha de Storage não deve
+    // impedir que o usuário consiga removê-lo da biblioteca.
+    const { error: deleteError } = await supabase.from('articles').delete().eq('id', id)
+    if (deleteError) throw deleteError
+
     if (article.cover_image_path) {
-      await supabase.storage.from('article-images').remove([article.cover_image_path])
+      const { error: storageError } = await supabase.storage
+        .from('article-images')
+        .remove([article.cover_image_path])
+      if (storageError) console.error('Texto apagado, mas a capa não pôde ser removida:', storageError)
     }
 
-    const { error } = await supabase.from('articles').delete().eq('id', id)
-    if (error) throw error
     return json({ ok: true })
   } catch (error) {
     return handleError(error)

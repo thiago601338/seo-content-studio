@@ -31,14 +31,18 @@ export default async (req) => {
 
     if (current.status === 'paused') return json({ job: current })
 
-    const now = new Date().toISOString()
-    const patch = current.status === 'queued'
-      ? { status: 'paused', pause_requested: false, paused_at: now }
-      : { pause_requested: true }
-
+    // Pausa imediata: o status muda para "paused" na mesma requisição.
+    // run_version invalida qualquer worker antigo que ainda esteja terminando
+    // uma chamada à OpenAI, impedindo que ele grave novos textos depois da pausa.
+    const nextRunVersion = Number(current.run_version || 0) + 1
     const { data, error } = await supabase
       .from('article_jobs')
-      .update(patch)
+      .update({
+        status: 'paused',
+        pause_requested: false,
+        paused_at: new Date().toISOString(),
+        run_version: nextRunVersion,
+      })
       .eq('id', id)
       .select('*')
       .single()

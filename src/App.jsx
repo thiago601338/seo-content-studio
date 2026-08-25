@@ -33,7 +33,6 @@ function getJobProgress(job) {
 }
 
 function getJobStatusLabel(job) {
-  if (job?.status === 'processing' && job?.pause_requested) return 'Pausando'
   return ({
     queued: 'Na fila',
     processing: 'Em andamento',
@@ -183,7 +182,7 @@ export default function App() {
 
       await apiFetch('/generate-background', {
         method: 'POST',
-        body: JSON.stringify({ jobId: created.job.id }),
+        body: JSON.stringify({ jobId: created.job.id, runVersion: Number(created.job.run_version || 0) }),
       })
       await loadActiveJobs(true)
       setMessage('Geração adicionada. Ela continuará visível no painel enquanto estiver na fila, em andamento ou pausada.')
@@ -201,9 +200,7 @@ export default function App() {
         body: JSON.stringify({ id }),
       })
       await loadActiveJobs(true)
-      setMessage(data.job?.pause_requested
-        ? 'Pausa solicitada. O texto que já estiver sendo criado pode terminar; depois o lote ficará pausado.'
-        : 'Geração pausada.')
+      setMessage('Geração pausada. Qualquer worker anterior foi invalidado e não poderá salvar novos textos.')
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -221,7 +218,7 @@ export default function App() {
       })
       await apiFetch('/generate-background', {
         method: 'POST',
-        body: JSON.stringify({ jobId: data.job.id }),
+        body: JSON.stringify({ jobId: data.job.id, runVersion: Number(data.job.run_version || 0) }),
       })
       await loadActiveJobs(true)
       setMessage('Geração retomada.')
@@ -233,9 +230,9 @@ export default function App() {
   }
 
   async function pauseAllGenerations() {
-    const targets = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status) && !item.pause_requested)
+    const targets = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status))
     if (!targets.length) return
-    if (!confirm(`Pausar ${targets.length} geração(ões)? Se algum texto já estiver sendo criado, ele pode terminar antes da pausa.`)) return
+    if (!confirm(`Pausar ${targets.length} geração(ões)? A pausa aparecerá imediatamente e os workers atuais serão invalidados.`)) return
 
     setJobAction('all')
     setMessage('')
@@ -246,7 +243,7 @@ export default function App() {
       })))
       const failures = results.filter((result) => result.status === 'rejected').length
       await loadActiveJobs(true)
-      setMessage(failures ? `${targets.length - failures} geração(ões) pausadas/solicitadas; ${failures} falharam.` : 'Pausa solicitada para todas as gerações ativas.')
+      setMessage(failures ? `${targets.length - failures} geração(ões) pausadas; ${failures} falharam.` : 'Todas as gerações ativas foram pausadas.')
     } catch (error) {
       setMessage(error.message)
     } finally {
@@ -276,7 +273,10 @@ export default function App() {
       setSelected(null)
       await loadHistory('')
       setSearch('')
-      setMessage(`${data.deleted || 0} texto(s) excluído(s).`)
+      const hasRunning = activeJobs.some((item) => ['queued', 'processing'].includes(item.status))
+      setMessage(hasRunning
+        ? `${data.deleted || 0} texto(s) excluído(s). As gerações ativas continuam e podem criar novos textos depois desta exclusão.`
+        : `${data.deleted || 0} texto(s) excluído(s).`)
     } catch (error) {
       setMessage(error.message)
     }
@@ -319,7 +319,7 @@ export default function App() {
 
   const queuedJobs = activeJobs.filter((item) => item.status === 'queued')
   const queuePositions = new Map(queuedJobs.map((item, index) => [item.id, index + 1]))
-  const pausableJobs = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status) && !item.pause_requested)
+  const pausableJobs = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status))
 
   return (
     <div className="app-shell">
@@ -375,15 +375,14 @@ export default function App() {
             <div className="active-jobs-list">
               {activeJobs.map((item) => {
                 const itemProgress = getJobProgress(item)
-                const isPausing = item.status === 'processing' && item.pause_requested
                 const queuePosition = queuePositions.get(item.id)
                 return (
-                  <article className={`active-job-card ${item.status} ${isPausing ? 'pausing' : ''}`} key={item.id}>
+                  <article className={`active-job-card ${item.status}`} key={item.id}>
                     <div className="active-job-main">
                       <div className="active-job-top">
                         <div>
                           <div className="job-label-line">
-                            <span className={`job-status ${item.status} ${isPausing ? 'pausing' : ''}`}>{getJobStatusLabel(item)}</span>
+                            <span className={`job-status ${item.status}`}>{getJobStatusLabel(item)}</span>
                             {queuePosition && <span className="queue-position">Fila #{queuePosition}</span>}
                           </div>
                           <h3>{item.keyword}</h3>
@@ -404,8 +403,6 @@ export default function App() {
                         <button className="primary compact-action" type="button" disabled={jobAction === item.id || jobAction === 'all'} onClick={() => resumeGeneration(item.id)}>
                           {jobAction === item.id ? 'Retomando...' : 'Retomar'}
                         </button>
-                      ) : isPausing ? (
-                        <button className="secondary-button compact-action" type="button" disabled>Pausando...</button>
                       ) : (
                         <button className="secondary-button compact-action" type="button" disabled={jobAction === item.id || jobAction === 'all'} onClick={() => pauseGeneration(item.id)}>
                           {jobAction === item.id ? 'Solicitando...' : 'Pausar'}

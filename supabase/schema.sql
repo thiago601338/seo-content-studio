@@ -14,6 +14,7 @@ create table if not exists public.article_jobs (
   status text not null default 'queued' check (status in ('queued','processing','paused','completed','completed_with_errors','failed')),
   pause_requested boolean not null default false,
   paused_at timestamptz,
+  run_version integer not null default 0,
   completed_count integer not null default 0,
   failed_count integer not null default 0,
   error_message text,
@@ -28,6 +29,7 @@ alter table public.article_jobs add constraint article_jobs_quantity_check check
 alter table public.article_jobs add column if not exists instructions text;
 alter table public.article_jobs add column if not exists pause_requested boolean not null default false;
 alter table public.article_jobs add column if not exists paused_at timestamptz;
+alter table public.article_jobs add column if not exists run_version integer not null default 0;
 alter table public.article_jobs drop constraint if exists article_jobs_status_check;
 alter table public.article_jobs add constraint article_jobs_status_check check (status in ('queued','processing','paused','completed','completed_with_errors','failed'));
 

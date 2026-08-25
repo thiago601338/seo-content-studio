@@ -27,6 +27,9 @@ export default async (req) => {
       throw error
     }
 
+    // Cada retomada recebe uma nova versão de execução. Isso evita que um
+    // worker antigo (anterior à pausa) volte a gravar conteúdo por engano.
+    const nextRunVersion = Number(current.run_version || 0) + 1
     const { data, error } = await supabase
       .from('article_jobs')
       .update({
@@ -34,6 +37,7 @@ export default async (req) => {
         pause_requested: false,
         paused_at: null,
         completed_at: null,
+        run_version: nextRunVersion,
       })
       .eq('id', id)
       .eq('status', 'paused')
