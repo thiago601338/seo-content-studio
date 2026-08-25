@@ -134,7 +134,7 @@ function capHtmlAtWordLimit(html, maxWords = 800, keyword = '') {
   return output
 }
 
-export async function generateSeoArticle({ keyword, linkUrl, keywordInTitle, index, quantity, previousTitles = [] }) {
+export async function generateSeoArticle({ keyword, linkUrl, keywordInTitle, index, quantity, previousTitles = [], instructions = '' }) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY não configurada no Netlify.')
   const model = process.env.OPENAI_TEXT_MODEL || 'gpt-5.6-sol'
@@ -147,18 +147,28 @@ export async function generateSeoArticle({ keyword, linkUrl, keywordInTitle, ind
     ? `Evite títulos ou ângulos parecidos com estes já criados no lote: ${previousTitles.map((t) => `"${t}"`).join(', ')}.`
     : 'Este é o primeiro artigo do lote.'
 
-  const instructions = `
+  const userDirection = String(instructions || '').trim()
+  const directionBlock = userDirection
+    ? `DIRECIONAMENTO EDITORIAL DO USUÁRIO — siga com alta prioridade para tom, público, abordagem, formato, pontos obrigatórios e estilo:
+${userDirection}
+
+Se o direcionamento pedir uma quantidade de palavras específica de até 800, siga esse alvo. Se não definir tamanho, use aproximadamente 650 a 780 palavras. O direcionamento pode mudar a estrutura padrão (por exemplo: sem listas, formato notícia, linguagem informal, texto técnico), desde que respeite as regras técnicas e factuais obrigatórias abaixo.`
+    : 'O usuário não forneceu direcionamento editorial adicional. Use aproximadamente 650 a 780 palavras e uma estrutura SEO natural.'
+
+  const systemInstructions = `
 Você é um redator SEO sênior em português do Brasil. Produza conteúdo editorial útil, original, claro e pronto para publicação.
 O objetivo é aumentar a chance de bom desempenho orgânico no Google por meio de qualidade, intenção de busca, cobertura semântica e boa experiência de leitura. Não prometa posicionamento.
 
-Regras obrigatórias:
+${directionBlock}
+
+Regras técnicas e factuais obrigatórias:
 - escreva para humanos, sem keyword stuffing;
 - responda à intenção de busca logo no começo e aprofunde o tema ao longo do texto;
 - use informações plausíveis e duráveis; não invente estudos, estatísticas, especialistas, leis, cotações ou fatos atuais;
 - não diga que é IA, não explique o processo e não inclua notas ao editor;
-- entregue um artigo com aproximadamente 650 a 780 palavras e NUNCA ultrapasse 800 palavras no html_content;
+- NUNCA ultrapasse 800 palavras no html_content; se o direcionamento não especificar tamanho, mire aproximadamente 650 a 780;
 - não use <h1> no html_content, pois o título será publicado separadamente;
-- use <p>, <h2>, <h3>, <ul>, <ol>, <strong> e <blockquote> apenas quando fizer sentido;
+- use somente HTML editorial simples (<p>, <h2>, <h3>, <ul>, <ol>, <strong> e <blockquote>); adapte a estrutura ao direcionamento do usuário;
 - inclua perguntas frequentes somente se melhorarem o conteúdo, evitando formato mecânico em todos os artigos;
 - meta_description deve ter idealmente 140 a 160 caracteres, ser persuasiva e específica;
 - excerpt deve ser um resumo curto de 1 a 2 frases;
@@ -186,7 +196,7 @@ Varie o enfoque, exemplos, estrutura e título em relação aos demais artigos d
     },
     body: JSON.stringify({
       model,
-      instructions,
+      instructions: systemInstructions,
       input,
       text: {
         format: {

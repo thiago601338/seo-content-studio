@@ -11,7 +11,7 @@ export default async (req) => {
       .from('articles')
       .select('id,title,keyword,meta_description,cover_image_url,word_count,created_at')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(1000)
 
     if (search) {
       const safe = search.replace(/[%_,()]/g, ' ')

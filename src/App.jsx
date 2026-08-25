@@ -71,6 +71,7 @@ export default function App() {
     keyword: '',
     linkUrl: '',
     keywordInTitle: true,
+    instructions: '',
   })
 
   const sanitizedArticle = useMemo(
@@ -149,6 +150,7 @@ export default function App() {
           keyword: form.keyword.trim(),
           linkUrl: form.linkUrl.trim(),
           keywordInTitle: Boolean(form.keywordInTitle),
+          instructions: form.instructions.trim(),
         }),
       })
 
@@ -164,7 +166,7 @@ export default function App() {
   }
 
   async function removeArticle(id) {
-    if (!confirm('Excluir este texto do histórico?')) return
+    if (!confirm('Excluir este texto do histórico? A capa vinculada também será removida.')) return
     try {
       await apiFetch('/delete-article', {
         method: 'POST',
@@ -172,6 +174,20 @@ export default function App() {
       })
       if (selected?.id === id) setSelected(null)
       await loadHistory()
+      setMessage('Texto excluído.')
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  async function removeAllArticles() {
+    if (!confirm('Excluir TODOS os textos salvos? As capas vinculadas também serão removidas. Esta ação não pode ser desfeita.')) return
+    try {
+      const data = await apiFetch('/delete-all-articles', { method: 'POST' })
+      setSelected(null)
+      await loadHistory('')
+      setSearch('')
+      setMessage(`${data.deleted || 0} texto(s) excluído(s).`)
     } catch (error) {
       setMessage(error.message)
     }
@@ -288,6 +304,18 @@ export default function App() {
                   />
                 </label>
 
+                <label className="span-2">
+                  Direcionamento para a IA <span className="optional">(opcional)</span>
+                  <textarea
+                    value={form.instructions}
+                    onChange={(e) => setForm({ ...form, instructions: e.target.value })}
+                    maxLength={6000}
+                    rows={7}
+                    placeholder={'Ex.: escreva como uma matéria jornalística, sem listas; público de empresários; tom profissional; cite vantagens e cuidados; não faça conclusão; use subtítulos curtos. Você pode dar qualquer orientação editorial aqui.'}
+                  />
+                  <small className="field-help">A IA seguirá este direcionamento em todos os textos do lote. Se você definir uma quantidade de palavras menor que 800, ela também tentará seguir.</small>
+                </label>
+
                 <label className="switch-card">
                   <span>
                     <strong>Criar imagem de capa</strong>
@@ -314,7 +342,7 @@ export default function App() {
               </div>
 
               <div className="seo-rules">
-                <span>✓ Estrutura H2/H3</span>
+                <span>✓ Estrutura adaptável</span>
                 <span>✓ Meta description</span>
                 <span>✓ Link aplicado na palavra-chave</span>
                 <span>✓ Sem keyword stuffing</span>
@@ -354,9 +382,12 @@ export default function App() {
           <section className="history-layout">
             <div className="panel history-panel">
               <div className="history-tools">
-                <div>
-                  <h2>Textos salvos</h2>
-                  <p>{articles.length} encontrados</p>
+                <div className="history-summary">
+                  <div>
+                    <h2>Textos salvos</h2>
+                    <p>{articles.length} encontrados</p>
+                  </div>
+                  <button className="danger-button" type="button" onClick={removeAllArticles}>Excluir todos</button>
                 </div>
                 <form onSubmit={(e) => { e.preventDefault(); loadHistory(search) }}>
                   <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por título ou palavra-chave" />
@@ -383,6 +414,15 @@ export default function App() {
                         <span>{article.word_count || 0} palavras</span>
                       </div>
                     </div>
+                    <button
+                      className="row-delete"
+                      type="button"
+                      title="Excluir este texto"
+                      aria-label={`Excluir ${article.title}`}
+                      onClick={(e) => { e.stopPropagation(); removeArticle(article.id) }}
+                    >
+                      Excluir
+                    </button>
                   </article>
                 ))}
               </div>

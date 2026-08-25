@@ -12,6 +12,7 @@ export default async (req) => {
     const linkUrl = String(body.linkUrl || '').trim()
     const createCover = Boolean(body.createCover)
     const keywordInTitle = Boolean(body.keywordInTitle)
+    const instructions = String(body.instructions || '').trim()
 
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 120) {
       const error = new Error('A quantidade deve ser de 1 a 120 textos por lote.')
@@ -20,6 +21,11 @@ export default async (req) => {
     }
     if (keyword.length < 2 || keyword.length > 160) {
       const error = new Error('Informe uma palavra-chave válida.')
+      error.status = 400
+      throw error
+    }
+    if (instructions.length > 6000) {
+      const error = new Error('O direcionamento pode ter no máximo 6000 caracteres.')
       error.status = 400
       throw error
     }
@@ -40,6 +46,7 @@ export default async (req) => {
         link_url: url.toString(),
         create_cover: createCover,
         keyword_in_title: keywordInTitle,
+        instructions: instructions || null,
         status: 'queued',
       })
       .select('*')

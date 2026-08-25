@@ -10,7 +10,8 @@ Na tela de criação você informa somente:
 - se deve criar imagem de capa;
 - palavra-chave;
 - URL que será aplicada nessa palavra-chave;
-- se o título deve conter a palavra-chave exata.
+- se o título deve conter a palavra-chave exata;
+- um **direcionamento livre para a IA**, onde você pode determinar tom, público, formato, abordagem, estrutura, pontos obrigatórios e até um alvo menor de palavras.
 
 O sistema então:
 
@@ -23,7 +24,7 @@ O sistema então:
 7. opcionalmente gera uma capa 16:9 usando a API de imagens da OpenAI;
 8. salva tudo no Supabase;
 9. mostra o progresso do lote;
-10. mantém uma aba de histórico com busca, visualização, copiar texto formatado, copiar HTML e excluir.
+10. mantém uma aba de histórico com busca, visualização, copiar texto formatado, copiar HTML, excluir individualmente e **Excluir todos**.
 
 > Importante: nenhuma técnica garante posição no Google. O prompt foi construído para priorizar conteúdo útil, intenção de busca, profundidade temática e leitura natural — fatores que aumentam a qualidade editorial sem prometer ranking.
 
@@ -109,7 +110,7 @@ Depois das variáveis, faça um novo deploy.
 
 1. Abra o endereço do Netlify.
 2. Digite a senha definida em `APP_PASSWORD`.
-3. Na aba **Criar textos**, informe os cinco campos.
+3. Na aba **Criar textos**, informe os campos básicos e, se quiser, escreva o **Direcionamento para a IA**.
 4. Clique em **Gerar textos**.
 5. O processamento ocorre em Background Function e o painel mostra o andamento.
 6. Abra **Meus textos**.
@@ -151,12 +152,15 @@ seo-content-studio/
 │       ├── article.mjs
 │       ├── articles.mjs
 │       ├── delete-article.mjs
+       ├── delete-all-articles.mjs
 │       ├── generate-background.mjs
 │       ├── health.mjs
 │       ├── job.mjs
 │       └── start-job.mjs
 ├── supabase/
-│   └── schema.sql
+│   ├── schema.sql
+│   ├── update-limit-120.sql
+│   └── update-direcionamento.sql
 ├── .env.example
 ├── index.html
 ├── netlify.toml
@@ -182,3 +186,13 @@ Se você já executou o `supabase/schema.sql` anteriormente, rode uma vez no SQL
 `supabase/update-limit-120.sql`
 
 O processamento de lotes grandes é dividido automaticamente em blocos menores para reduzir o risco de timeout das Background Functions do Netlify. Cada artigo é orientado a ficar entre cerca de 650 e 780 palavras, com limite máximo de 800 palavras no conteúdo.
+
+## Atualização: direcionamento livre e exclusão de textos
+
+Se seu Supabase já estava configurado antes desta versão, execute **uma única vez** no SQL Editor:
+
+`supabase/update-direcionamento.sql`
+
+Depois substitua os arquivos do GitHub pelos desta versão e aguarde o novo deploy do Netlify. Não é necessário recriar o projeto, as chaves ou as tabelas.
+
+Na aba **Meus textos**, cada item agora possui um botão **Excluir**, e no topo há **Excluir todos**. Ao excluir um artigo, a imagem de capa vinculada também é apagada do Storage. A exclusão total é bloqueada enquanto houver uma geração em andamento, para evitar que novos textos reapareçam durante a limpeza.

@@ -78,6 +78,7 @@ export default async (req) => {
           index,
           quantity: job.quantity,
           previousTitles: titles.slice(-12),
+          instructions: job.instructions || '',
         })
 
         titles.push(article.title)

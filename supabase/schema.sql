@@ -10,6 +10,7 @@ create table if not exists public.article_jobs (
   link_url text not null,
   create_cover boolean not null default true,
   keyword_in_title boolean not null default true,
+  instructions text,
   status text not null default 'queued' check (status in ('queued','processing','completed','completed_with_errors','failed')),
   completed_count integer not null default 0,
   failed_count integer not null default 0,
@@ -22,6 +23,7 @@ create table if not exists public.article_jobs (
 -- Mantém projetos já existentes compatíveis com o novo limite de 120 textos por lote.
 alter table public.article_jobs drop constraint if exists article_jobs_quantity_check;
 alter table public.article_jobs add constraint article_jobs_quantity_check check (quantity between 1 and 120);
+alter table public.article_jobs add column if not exists instructions text;
 
 create table if not exists public.articles (
   id uuid primary key default gen_random_uuid(),
