@@ -11,7 +11,9 @@ create table if not exists public.article_jobs (
   create_cover boolean not null default true,
   keyword_in_title boolean not null default true,
   instructions text,
-  status text not null default 'queued' check (status in ('queued','processing','completed','completed_with_errors','failed')),
+  status text not null default 'queued' check (status in ('queued','processing','paused','completed','completed_with_errors','failed')),
+  pause_requested boolean not null default false,
+  paused_at timestamptz,
   completed_count integer not null default 0,
   failed_count integer not null default 0,
   error_message text,
@@ -24,6 +26,10 @@ create table if not exists public.article_jobs (
 alter table public.article_jobs drop constraint if exists article_jobs_quantity_check;
 alter table public.article_jobs add constraint article_jobs_quantity_check check (quantity between 1 and 120);
 alter table public.article_jobs add column if not exists instructions text;
+alter table public.article_jobs add column if not exists pause_requested boolean not null default false;
+alter table public.article_jobs add column if not exists paused_at timestamptz;
+alter table public.article_jobs drop constraint if exists article_jobs_status_check;
+alter table public.article_jobs add constraint article_jobs_status_check check (status in ('queued','processing','paused','completed','completed_with_errors','failed'));
 
 create table if not exists public.articles (
   id uuid primary key default gen_random_uuid(),
@@ -45,6 +51,7 @@ create table if not exists public.articles (
 create index if not exists articles_created_at_idx on public.articles(created_at desc);
 create index if not exists articles_keyword_idx on public.articles(keyword);
 create index if not exists article_jobs_created_at_idx on public.article_jobs(created_at desc);
+create index if not exists article_jobs_status_created_at_idx on public.article_jobs(status, created_at asc);
 
 alter table public.article_jobs enable row level security;
 alter table public.articles enable row level security;

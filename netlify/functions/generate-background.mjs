@@ -22,6 +22,33 @@ async function continueJob(req, jobId) {
   }
 }
 
+async function shouldStopForPause(supabase, jobId) {
+  const { data, error } = await supabase
+    .from('article_jobs')
+    .select('status,pause_requested')
+    .eq('id', jobId)
+    .single()
+  if (error) throw error
+
+  if (TERMINAL_STATUSES.has(data.status) || data.status === 'paused') return true
+
+  if (data.pause_requested) {
+    const { error: pauseError } = await supabase
+      .from('article_jobs')
+      .update({
+        status: 'paused',
+        pause_requested: false,
+        paused_at: new Date().toISOString(),
+      })
+      .eq('id', jobId)
+      .eq('pause_requested', true)
+    if (pauseError) throw pauseError
+    return true
+  }
+
+  return false
+}
+
 export default async (req) => {
   let jobId = null
   const supabase = getSupabaseAdmin()
@@ -32,25 +59,43 @@ export default async (req) => {
     jobId = body.jobId
     if (!jobId) throw new Error('jobId não informado.')
 
-    const { data: job, error: jobError } = await supabase
+    const { data: initialJob, error: jobError } = await supabase
       .from('article_jobs')
       .select('*')
       .eq('id', jobId)
       .single()
     if (jobError) throw jobError
 
-    if (TERMINAL_STATUSES.has(job.status)) return
-    if (!['queued', 'processing'].includes(job.status)) return
+    if (TERMINAL_STATUSES.has(initialJob.status) || initialJob.status === 'paused') return
+    if (!['queued', 'processing'].includes(initialJob.status)) return
+
+    let job = initialJob
 
     if (job.status === 'queued') {
-      await supabase
+      // Atualização condicional: se o usuário pausar enquanto a função está iniciando,
+      // o status "paused" não será sobrescrito por "processing".
+      const { data: claimed, error: claimError } = await supabase
         .from('article_jobs')
-        .update({ status: 'processing', started_at: new Date().toISOString(), error_message: null })
+        .update({
+          status: 'processing',
+          started_at: job.started_at || new Date().toISOString(),
+          paused_at: null,
+        })
         .eq('id', jobId)
+        .eq('status', 'queued')
+        .eq('pause_requested', false)
+        .select('*')
+        .maybeSingle()
+      if (claimError) throw claimError
+      if (!claimed) return
+      job = claimed
     }
 
-    // Um lote de até 120 textos é dividido em blocos menores. Isso evita manter
-    // uma única Background Function do Netlify aberta durante todo o lote.
+    if (await shouldStopForPause(supabase, jobId)) return
+
+    // Um lote de até 120 textos é dividido em blocos menores. A pausa é
+    // cooperativa: se for solicitada durante a criação de um artigo, o artigo
+    // atual pode terminar, mas nenhum novo artigo será iniciado depois disso.
     const chunkSize = job.create_cover ? 3 : 6
     let completed = Number(job.completed_count || 0)
     let failed = Number(job.failed_count || 0)
@@ -70,6 +115,8 @@ export default async (req) => {
     const errors = job.error_message ? job.error_message.split('\n').filter(Boolean).slice(-5) : []
 
     for (let index = startIndex; index <= endIndex; index += 1) {
+      if (await shouldStopForPause(supabase, jobId)) return
+
       try {
         const article = await generateSeoArticle({
           keyword: job.keyword,
@@ -128,7 +175,7 @@ export default async (req) => {
         errors.push(`Artigo ${index}: ${articleError.message}`)
       }
 
-      await supabase
+      const { error: progressError } = await supabase
         .from('article_jobs')
         .update({
           completed_count: completed,
@@ -136,10 +183,14 @@ export default async (req) => {
           error_message: errors.length ? errors.slice(-5).join('\n') : null,
         })
         .eq('id', jobId)
+      if (progressError) throw progressError
+
+      if (await shouldStopForPause(supabase, jobId)) return
     }
 
     const processed = completed + failed
     if (processed < job.quantity) {
+      if (await shouldStopForPause(supabase, jobId)) return
       await continueJob(req, jobId)
       return
     }
@@ -149,6 +200,8 @@ export default async (req) => {
       .from('article_jobs')
       .update({
         status,
+        pause_requested: false,
+        paused_at: null,
         completed_count: completed,
         failed_count: failed,
         completed_at: new Date().toISOString(),
@@ -158,14 +211,27 @@ export default async (req) => {
   } catch (error) {
     console.error('Background generation failed:', error)
     if (jobId) {
-      await supabase
-        .from('article_jobs')
-        .update({
-          status: 'failed',
-          completed_at: new Date().toISOString(),
-          error_message: error.message,
-        })
-        .eq('id', jobId)
+      try {
+        const { data: current } = await supabase
+          .from('article_jobs')
+          .select('status')
+          .eq('id', jobId)
+          .maybeSingle()
+
+        if (current && current.status !== 'paused' && !TERMINAL_STATUSES.has(current.status)) {
+          await supabase
+            .from('article_jobs')
+            .update({
+              status: 'failed',
+              pause_requested: false,
+              completed_at: new Date().toISOString(),
+              error_message: error.message,
+            })
+            .eq('id', jobId)
+        }
+      } catch (updateError) {
+        console.error('Não foi possível registrar a falha do job:', updateError)
+      }
     }
   }
 }

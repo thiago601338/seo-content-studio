@@ -28,6 +28,19 @@ function formatDate(value) {
   }).format(new Date(value))
 }
 
+function getJobProgress(job) {
+  return Math.round((((Number(job?.completed_count) || 0) + (Number(job?.failed_count) || 0)) / Math.max(Number(job?.quantity) || 1, 1)) * 100)
+}
+
+function getJobStatusLabel(job) {
+  if (job?.status === 'processing' && job?.pause_requested) return 'Pausando'
+  return ({
+    queued: 'Na fila',
+    processing: 'Em andamento',
+    paused: 'Pausada',
+  })[job?.status] || String(job?.status || '').replaceAll('_', ' ')
+}
+
 function htmlToPlain(html) {
   const doc = new DOMParser().parseFromString(html || '', 'text/html')
   return doc.body.innerText.trim()
@@ -64,7 +77,9 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [message, setMessage] = useState('')
-  const [job, setJob] = useState(null)
+  const [activeJobs, setActiveJobs] = useState([])
+  const [loadingJobs, setLoadingJobs] = useState(false)
+  const [jobAction, setJobAction] = useState('')
   const [form, setForm] = useState({
     quantity: 1,
     createCover: true,
@@ -85,23 +100,24 @@ export default function App() {
       sessionStorage.removeItem('seo_app_password')
       setUnlocked(false)
     })
+    loadActiveJobs().catch((error) => setMessage(error.message))
   }, [unlocked])
 
   useEffect(() => {
-    if (!job?.id || ['completed', 'completed_with_errors', 'failed'].includes(job.status)) return
-    const timer = setInterval(async () => {
-      try {
-        const data = await apiFetch(`/job?id=${encodeURIComponent(job.id)}`)
-        setJob(data.job)
-        if (['completed', 'completed_with_errors', 'failed'].includes(data.job.status)) {
-          await loadHistory()
-        }
-      } catch (error) {
-        setMessage(error.message)
-      }
+    if (!unlocked) return
+    const timer = setInterval(() => {
+      loadActiveJobs(true).catch((error) => setMessage(error.message))
     }, 2500)
     return () => clearInterval(timer)
-  }, [job?.id, job?.status])
+  }, [unlocked])
+
+  useEffect(() => {
+    if (!unlocked || tab !== 'history' || activeJobs.length === 0) return
+    const timer = setInterval(() => {
+      loadHistory(search).catch((error) => setMessage(error.message))
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [unlocked, tab, search, activeJobs.length])
 
   async function unlock(event) {
     event.preventDefault()
@@ -123,6 +139,17 @@ export default function App() {
       setArticles(data.articles || [])
     } finally {
       setLoadingHistory(false)
+    }
+  }
+
+  async function loadActiveJobs(quiet = false) {
+    if (!quiet) setLoadingJobs(true)
+    try {
+      const data = await apiFetch('/jobs')
+      setActiveJobs(data.jobs || [])
+      return data.jobs || []
+    } finally {
+      if (!quiet) setLoadingJobs(false)
     }
   }
 
@@ -154,14 +181,76 @@ export default function App() {
         }),
       })
 
-      setJob(created.job)
       await apiFetch('/generate-background', {
         method: 'POST',
         body: JSON.stringify({ jobId: created.job.id }),
       })
-      setMessage('Geração iniciada. Você pode continuar usando o painel enquanto os textos são criados.')
+      await loadActiveJobs(true)
+      setMessage('Geração adicionada. Ela continuará visível no painel enquanto estiver na fila, em andamento ou pausada.')
     } catch (error) {
       setMessage(error.message)
+    }
+  }
+
+  async function pauseGeneration(id) {
+    setJobAction(id)
+    setMessage('')
+    try {
+      const data = await apiFetch('/pause-job', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      await loadActiveJobs(true)
+      setMessage(data.job?.pause_requested
+        ? 'Pausa solicitada. O texto que já estiver sendo criado pode terminar; depois o lote ficará pausado.'
+        : 'Geração pausada.')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setJobAction('')
+    }
+  }
+
+  async function resumeGeneration(id) {
+    setJobAction(id)
+    setMessage('')
+    try {
+      const data = await apiFetch('/resume-job', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      await apiFetch('/generate-background', {
+        method: 'POST',
+        body: JSON.stringify({ jobId: data.job.id }),
+      })
+      await loadActiveJobs(true)
+      setMessage('Geração retomada.')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setJobAction('')
+    }
+  }
+
+  async function pauseAllGenerations() {
+    const targets = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status) && !item.pause_requested)
+    if (!targets.length) return
+    if (!confirm(`Pausar ${targets.length} geração(ões)? Se algum texto já estiver sendo criado, ele pode terminar antes da pausa.`)) return
+
+    setJobAction('all')
+    setMessage('')
+    try {
+      const results = await Promise.allSettled(targets.map((item) => apiFetch('/pause-job', {
+        method: 'POST',
+        body: JSON.stringify({ id: item.id }),
+      })))
+      const failures = results.filter((result) => result.status === 'rejected').length
+      await loadActiveJobs(true)
+      setMessage(failures ? `${targets.length - failures} geração(ões) pausadas/solicitadas; ${failures} falharam.` : 'Pausa solicitada para todas as gerações ativas.')
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setJobAction('')
     }
   }
 
@@ -198,6 +287,7 @@ export default function App() {
     setUnlocked(false)
     setLoginPassword('')
     setArticles([])
+    setActiveJobs([])
     setSelected(null)
   }
 
@@ -227,7 +317,9 @@ export default function App() {
     )
   }
 
-  const progress = job ? Math.round(((job.completed_count + job.failed_count) / Math.max(job.quantity, 1)) * 100) : 0
+  const queuedJobs = activeJobs.filter((item) => item.status === 'queued')
+  const queuePositions = new Map(queuedJobs.map((item, index) => [item.id, index + 1]))
+  const pausableJobs = activeJobs.filter((item) => ['queued', 'processing'].includes(item.status) && !item.pause_requested)
 
   return (
     <div className="app-shell">
@@ -258,6 +350,74 @@ export default function App() {
         </header>
 
         {message && <div className="notice">{message}</div>}
+
+        <section className="panel active-jobs-panel">
+          <div className="active-jobs-heading">
+            <div>
+              <div className="active-jobs-title-row">
+                <h2>Gerações</h2>
+                <span className="active-count">{activeJobs.length}</span>
+              </div>
+              <p>As gerações em andamento, na fila e pausadas ficam salvas aqui mesmo se você atualizar a página.</p>
+            </div>
+            {pausableJobs.length > 1 && (
+              <button className="secondary-button" type="button" disabled={jobAction === 'all'} onClick={pauseAllGenerations}>
+                {jobAction === 'all' ? 'Pausando...' : 'Pausar todas'}
+              </button>
+            )}
+          </div>
+
+          {loadingJobs && activeJobs.length === 0 ? (
+            <div className="jobs-empty">Carregando gerações...</div>
+          ) : activeJobs.length === 0 ? (
+            <div className="jobs-empty">Nenhuma geração em andamento, na fila ou pausada.</div>
+          ) : (
+            <div className="active-jobs-list">
+              {activeJobs.map((item) => {
+                const itemProgress = getJobProgress(item)
+                const isPausing = item.status === 'processing' && item.pause_requested
+                const queuePosition = queuePositions.get(item.id)
+                return (
+                  <article className={`active-job-card ${item.status} ${isPausing ? 'pausing' : ''}`} key={item.id}>
+                    <div className="active-job-main">
+                      <div className="active-job-top">
+                        <div>
+                          <div className="job-label-line">
+                            <span className={`job-status ${item.status} ${isPausing ? 'pausing' : ''}`}>{getJobStatusLabel(item)}</span>
+                            {queuePosition && <span className="queue-position">Fila #{queuePosition}</span>}
+                          </div>
+                          <h3>{item.keyword}</h3>
+                          <p>{item.quantity} texto(s) · criada em {formatDate(item.created_at)}</p>
+                        </div>
+                        <div className="job-progress-number">{itemProgress}%</div>
+                      </div>
+                      <div className="progress-track"><div style={{ width: `${itemProgress}%` }} /></div>
+                      <div className="job-numbers">
+                        <span>{item.completed_count} concluído(s)</span>
+                        <span>{item.failed_count} falha(s)</span>
+                        <strong>{(Number(item.completed_count) || 0) + (Number(item.failed_count) || 0)} de {item.quantity}</strong>
+                      </div>
+                      {item.error_message && <p className="job-error">{item.error_message}</p>}
+                    </div>
+                    <div className="active-job-actions">
+                      {item.status === 'paused' ? (
+                        <button className="primary compact-action" type="button" disabled={jobAction === item.id || jobAction === 'all'} onClick={() => resumeGeneration(item.id)}>
+                          {jobAction === item.id ? 'Retomando...' : 'Retomar'}
+                        </button>
+                      ) : isPausing ? (
+                        <button className="secondary-button compact-action" type="button" disabled>Pausando...</button>
+                      ) : (
+                        <button className="secondary-button compact-action" type="button" disabled={jobAction === item.id || jobAction === 'all'} onClick={() => pauseGeneration(item.id)}>
+                          {jobAction === item.id ? 'Solicitando...' : 'Pausar'}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </section>
 
         {tab === 'create' ? (
           <section className="create-grid">
@@ -358,24 +518,6 @@ export default function App() {
                 <p>Os artigos são orientados por intenção de busca, profundidade temática, leitura natural e organização pronta para CMS.</p>
               </section>
 
-              {job && (
-                <section className="panel job-panel">
-                  <div className="job-head">
-                    <div>
-                      <p className="eyebrow">ÚLTIMA GERAÇÃO</p>
-                      <h3>{job.keyword}</h3>
-                    </div>
-                    <span className={`job-status ${job.status}`}>{job.status.replaceAll('_', ' ')}</span>
-                  </div>
-                  <div className="progress-track"><div style={{ width: `${progress}%` }} /></div>
-                  <div className="job-numbers">
-                    <span>{job.completed_count} concluídos</span>
-                    <span>{job.failed_count} falhas</span>
-                    <strong>{progress}%</strong>
-                  </div>
-                  {job.error_message && <p className="job-error">{job.error_message}</p>}
-                </section>
-              )}
             </div>
           </section>
         ) : (

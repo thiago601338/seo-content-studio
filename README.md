@@ -23,8 +23,9 @@ O sistema então:
 6. varia o ângulo e o título dos textos de um mesmo lote;
 7. opcionalmente gera uma capa 16:9 usando a API de imagens da OpenAI;
 8. salva tudo no Supabase;
-9. mostra o progresso do lote;
-10. mantém uma aba de histórico com busca, visualização, copiar texto formatado, copiar HTML, excluir individualmente e **Excluir todos**.
+9. mantém uma área persistente de **Gerações**, mostrando todos os lotes **na fila**, **em andamento**, **pausando** ou **pausados**, inclusive depois de atualizar a página;
+10. permite **Pausar**, **Retomar** e **Pausar todas** as gerações ativas;
+11. mantém uma aba de histórico com busca, visualização, copiar texto formatado, copiar HTML, excluir individualmente e **Excluir todos**.
 
 > Importante: nenhuma técnica garante posição no Google. O prompt foi construído para priorizar conteúdo útil, intenção de busca, profundidade temática e leitura natural — fatores que aumentam a qualidade editorial sem prometer ranking.
 
@@ -112,10 +113,11 @@ Depois das variáveis, faça um novo deploy.
 2. Digite a senha definida em `APP_PASSWORD`.
 3. Na aba **Criar textos**, informe os campos básicos e, se quiser, escreva o **Direcionamento para a IA**.
 4. Clique em **Gerar textos**.
-5. O processamento ocorre em Background Function e o painel mostra o andamento.
-6. Abra **Meus textos**.
-7. Clique em qualquer artigo.
-8. Use:
+5. O processamento ocorre em Background Function e a área **Gerações** mostra todos os lotes ativos. Eles não somem quando outro lote é criado ou quando a página é atualizada.
+6. Para interromper temporariamente um lote, use **Pausar**. Se um artigo já estiver sendo criado, ele pode terminar antes da pausa; nenhum novo artigo será iniciado depois que a pausa for reconhecida. Use **Retomar** para continuar.
+7. Abra **Meus textos**.
+8. Clique em qualquer artigo.
+9. Use:
    - **Copiar texto** para colar formatado em editores como WordPress;
    - **Copiar HTML** para usar no editor HTML do CMS.
 
@@ -152,15 +154,19 @@ seo-content-studio/
 │       ├── article.mjs
 │       ├── articles.mjs
 │       ├── delete-article.mjs
-       ├── delete-all-articles.mjs
+│       ├── delete-all-articles.mjs
 │       ├── generate-background.mjs
 │       ├── health.mjs
 │       ├── job.mjs
+│       ├── jobs.mjs
+│       ├── pause-job.mjs
+│       ├── resume-job.mjs
 │       └── start-job.mjs
 ├── supabase/
 │   ├── schema.sql
 │   ├── update-limit-120.sql
-│   └── update-direcionamento.sql
+│   ├── update-direcionamento.sql
+│   └── update-fila-pausa.sql
 ├── .env.example
 ├── index.html
 ├── netlify.toml
@@ -196,3 +202,16 @@ Se seu Supabase já estava configurado antes desta versão, execute **uma única
 Depois substitua os arquivos do GitHub pelos desta versão e aguarde o novo deploy do Netlify. Não é necessário recriar o projeto, as chaves ou as tabelas.
 
 Na aba **Meus textos**, cada item agora possui um botão **Excluir**, e no topo há **Excluir todos**. Ao excluir um artigo, a imagem de capa vinculada também é apagada do Storage. A exclusão total é bloqueada enquanto houver uma geração em andamento, para evitar que novos textos reapareçam durante a limpeza.
+
+
+## Atualização: gerações persistentes, fila e pausa
+
+Se o Supabase já estava configurado antes desta versão, execute **uma única vez** no SQL Editor:
+
+`supabase/update-fila-pausa.sql`
+
+Depois publique os arquivos desta versão no GitHub/Netlify. Não é necessário recriar o Supabase nem alterar as chaves.
+
+A área **Gerações** consulta os jobs diretamente no Supabase a cada poucos segundos, portanto todos os lotes com status **Na fila**, **Em andamento**, **Pausando** ou **Pausada** continuam visíveis mesmo depois de recarregar o site.
+
+A pausa é cooperativa: se a solicitação chegar enquanto a OpenAI já está criando um texto (ou uma capa), esse item pode terminar e ser salvo. O worker então reconhece a pausa e não inicia o próximo item. Isso evita interromper um artigo pela metade e permite retomar do ponto já concluído.
