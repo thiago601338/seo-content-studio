@@ -1,3 +1,14 @@
+# 3.2.0 - Perfis de configuracao
+
+- Nova aba **Perfis** no lugar de Modelos.
+- Crie perfis a partir das configuracoes atuais do gerador.
+- Selecao de perfil diretamente no topo do Gerador de artigos.
+- Ao trocar de perfil, todas as configuracoes de texto, IA, SEO, imagens, WordPress, Drive, links extras e direcionamento geral sao aplicadas automaticamente.
+- Enquanto um perfil estiver ativo, alteracoes de configuracao sao salvas automaticamente no Supabase com debounce.
+- Botao para salvar o perfil imediatamente.
+- Perfis podem ser duplicados, renomeados, excluidos e ativados pela aba Perfis.
+- Sem migration nova: reutiliza a tabela `presets` ja existente.
+
 # 3.1.1
 
 - Publicacao manual pelo painel agora força `status=publish` no WordPress e confirma o status retornado.

@@ -1,5 +1,5 @@
-import { Cloud, FileUp, Image, Link2, ListTree, Plus, Rocket, Save, Settings2, Sparkles, WandSparkles } from 'lucide-react';
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { Cloud, FileUp, Image, Link2, ListTree, Plus, Rocket, Save, Settings2, Sparkles, UserRoundCog, WandSparkles } from 'lucide-react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArticleRow } from '../components/ArticleRow';
 import { OutlineCard } from '../components/OutlineCard';
@@ -9,30 +9,19 @@ import { api, triggerBackground } from '../lib/api';
 import { alignedFlexible, alignedLines, lines, parseCsv } from '../lib/csv';
 import { supabase } from '../lib/supabase';
 import type { ArticleDraftRow, Outline, Site, WriterConfig } from '../lib/types';
+import { MAX_BATCH, MAX_WORDS, MIN_WORDS, normalizeWriterConfig, readLocalWriterConfig, toProfileConfig } from '../lib/writerConfig';
 
 function id() { return crypto.randomUUID(); }
 function emptyRow(): ArticleDraftRow { return { local_id: id(), selected: true, keyword: '', target_url: '', requested_title: '', topic: '', support_keywords: '' }; }
 function csvValues(value: string) { return value.split(',').map((v) => v.trim()).filter(Boolean); }
-const MAX_BATCH = 120;
-const MAX_WORDS = 800;
-const MIN_WORDS = 300;
-
-const defaultConfig: WriterConfig = {
-  site_id: '', publish_to_wordpress: false, save_to_drive: false, word_count: 800, keyword_in_title: true, content_type: 'auto', search_intent: 'auto', tone: 'editorial', point_of_view: 'auto', target_country: 'Brasil', readability: 'standard',
-  structure_depth: 'balanced', allow_h3: true, include_faq: false, include_takeaways: false, intro_hook: 'auto', web_research: false, reasoning_effort: 'low', model: 'gpt-5.6-terra',
-  cover_image: true, body_images: 2, image_size: '1536x1024', image_quality: 'low', image_performance: 'fast', image_style: 'fotografia editorial realista', internal_links: 2, extra_links: [],
-  include_conclusion: true, use_lists: true, use_tables: false, use_bold: true, category_id: '', author_id: '', publication_status: 'publish', schedule_start: '', interval_minutes: 0, sponsored: false, notes: '',
-};
+type ConfigProfile = { id: string; user_id: string; name: string; config: Partial<WriterConfig>; created_at: string; updated_at?: string };
 
 export function WriterPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sites, setSites] = useState<Site[]>([]);
   const [rows, setRows] = useState<ArticleDraftRow[]>([emptyRow()]);
-  const [config, setConfig] = useState<WriterConfig>(() => {
-    const saved = JSON.parse(localStorage.getItem('ri-writer-config') || '{}');
-    return { ...defaultConfig, ...saved, publication_status: saved.publication_status === 'draft' ? 'publish' : (saved.publication_status || 'publish'), image_performance: saved.image_performance || 'fast', image_quality: saved.image_performance ? (saved.image_quality || defaultConfig.image_quality) : 'low', word_count: Math.max(MIN_WORDS, Math.min(MAX_WORDS, Number(saved.word_count || defaultConfig.word_count))) };
-  });
+  const [config, setConfig] = useState<WriterConfig>(() => readLocalWriterConfig());
   const [bulk, setBulk] = useState({ keywords: '', titles: '', support: '', topics: '', links: '' });
   const [quantity, setQuantity] = useState(1);
   const [extraAnchors, setExtraAnchors] = useState('');
@@ -40,8 +29,15 @@ export function WriterPage() {
   const [message, setMessage] = useState('');
   const [planningAll, setPlanningAll] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [profiles, setProfiles] = useState<ConfigProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState(() => localStorage.getItem('ri-writer-profile-id') || '');
+  const [newProfileName, setNewProfileName] = useState('');
+  const [profileStatus, setProfileStatus] = useState('');
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const skipProfileSaveRef = useRef(0);
 
   const selectedSite = useMemo(() => sites.find((s) => s.id === config.site_id), [sites, config.site_id]);
+  const selectedProfile = useMemo(() => profiles.find((profile) => profile.id === selectedProfileId) || null, [profiles, selectedProfileId]);
 
   useEffect(() => {
     supabase.from('sites').select('*').eq('active', true).order('name').then(({ data }) => {
@@ -49,6 +45,94 @@ export function WriterPage() {
       if (!config.site_id && list[0]) setConfig((c) => ({ ...c, site_id: list[0].id }));
     });
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('presets').select('*').order('name').then(({ data }) => {
+      const list = (data || []) as ConfigProfile[];
+      setProfiles(list);
+      const savedId = localStorage.getItem('ri-writer-profile-id') || '';
+      const savedProfile = list.find((profile) => profile.id === savedId);
+      if (savedProfile) {
+        skipProfileSaveRef.current += 1;
+        const next = normalizeWriterConfig(savedProfile.config);
+        setSelectedProfileId(savedProfile.id);
+        setConfig(next);
+        setExtraAnchors(next.extra_links.map((item) => item.anchor).join('\n'));
+        setExtraUrls(next.extra_links.map((item) => item.url).join('\n'));
+        setProfileStatus(`Perfil ${savedProfile.name} carregado.`);
+      } else if (savedId) {
+        localStorage.removeItem('ri-writer-profile-id');
+        setSelectedProfileId('');
+      }
+      setProfilesLoaded(true);
+    });
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !selectedProfileId || !profilesLoaded) return;
+    if (skipProfileSaveRef.current > 0) { skipProfileSaveRef.current -= 1; return; }
+    const timer = window.setTimeout(async () => {
+      setProfileStatus('Salvando configuracoes no perfil...');
+      const snapshot = toProfileConfig(config, buildExtraLinks());
+      const { error } = await supabase.from('presets').update({ config: snapshot, updated_at: new Date().toISOString() }).eq('id', selectedProfileId).eq('user_id', user.id);
+      if (error) { setProfileStatus(`Erro ao salvar perfil: ${error.message}`); return; }
+      setProfiles((all) => all.map((profile) => profile.id === selectedProfileId ? { ...profile, config: snapshot, updated_at: new Date().toISOString() } : profile));
+      localStorage.setItem('ri-writer-config', JSON.stringify(snapshot));
+      setProfileStatus('Perfil salvo automaticamente.');
+    }, 850);
+    return () => window.clearTimeout(timer);
+  }, [config, extraAnchors, extraUrls, selectedProfileId, profilesLoaded, user?.id]);
+
+  function applyProfile(profileId: string) {
+    setSelectedProfileId(profileId);
+    if (!profileId) {
+      localStorage.removeItem('ri-writer-profile-id');
+      skipProfileSaveRef.current += 1;
+      const next = readLocalWriterConfig();
+      setConfig(next);
+      setExtraAnchors(next.extra_links.map((item) => item.anchor).join('\n'));
+      setExtraUrls(next.extra_links.map((item) => item.url).join('\n'));
+      setProfileStatus('Usando preferencias locais, sem perfil ativo.');
+      return;
+    }
+    const profile = profiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    localStorage.setItem('ri-writer-profile-id', profile.id);
+    skipProfileSaveRef.current += 1;
+    const next = normalizeWriterConfig(profile.config);
+    setConfig(next);
+    setExtraAnchors(next.extra_links.map((item) => item.anchor).join('\n'));
+    setExtraUrls(next.extra_links.map((item) => item.url).join('\n'));
+    setProfileStatus(`Perfil ${profile.name} aplicado. Alteracoes feitas agora serao salvas automaticamente nele.`);
+  }
+
+  async function createProfileFromCurrent() {
+    if (!user) return;
+    const name = newProfileName.trim();
+    if (!name) { setProfileStatus('Digite um nome para o novo perfil.'); return; }
+    const snapshot = toProfileConfig(config, buildExtraLinks());
+    const { data, error } = await supabase.from('presets').insert({ user_id: user.id, name, config: snapshot }).select('*').single();
+    if (error || !data) { setProfileStatus(error?.message || 'Nao foi possivel criar o perfil.'); return; }
+    const created = data as ConfigProfile;
+    setProfiles((all) => [...all, created].sort((a, b) => a.name.localeCompare(b.name)));
+    skipProfileSaveRef.current += 1;
+    setSelectedProfileId(created.id);
+    localStorage.setItem('ri-writer-profile-id', created.id);
+    localStorage.setItem('ri-writer-config', JSON.stringify(snapshot));
+    setNewProfileName('');
+    setProfileStatus(`Perfil ${created.name} criado e ativado.`);
+  }
+
+  async function saveProfileNow() {
+    if (!user || !selectedProfileId) { localStorage.setItem('ri-writer-config', JSON.stringify(toProfileConfig(config, buildExtraLinks()))); setProfileStatus('Preferencias locais salvas.'); return; }
+    const snapshot = toProfileConfig(config, buildExtraLinks());
+    const { error } = await supabase.from('presets').update({ config: snapshot, updated_at: new Date().toISOString() }).eq('id', selectedProfileId).eq('user_id', user.id);
+    if (error) { setProfileStatus(error.message); return; }
+    setProfiles((all) => all.map((profile) => profile.id === selectedProfileId ? { ...profile, config: snapshot, updated_at: new Date().toISOString() } : profile));
+    localStorage.setItem('ri-writer-config', JSON.stringify(snapshot));
+    setProfileStatus('Perfil salvo.');
+  }
 
   function updateConfig<K extends keyof WriterConfig>(key: K, value: WriterConfig[K]) { setConfig((c) => ({ ...c, [key]: value })); }
   function setImagePerformance(mode: WriterConfig['image_performance']) {
@@ -184,7 +268,17 @@ export function WriterPage() {
 
   return (
     <div className="page-wrap writer-page">
-      <header className="page-header"><div><span className="eyebrow"><Sparkles size={14} /> Conteudo em escala</span><h1>Gerador de artigos SEO</h1><p>Monte o lote, aprove a estrutura H2/H3 e escolha o destino: somente Textos, Google Drive e/ou WordPress.</p></div><button className="btn ghost" onClick={() => localStorage.setItem('ri-writer-config', JSON.stringify(config))}><Save size={16} /> Salvar preferencias</button></header>
+      <header className="page-header"><div><span className="eyebrow"><Sparkles size={14} /> Conteudo em escala</span><h1>Gerador de artigos SEO</h1><p>Monte o lote, aprove a estrutura H2/H3 e escolha o destino: somente Textos, Google Drive e/ou WordPress.</p></div><button className="btn ghost" onClick={saveProfileNow}><Save size={16} /> {selectedProfile ? 'Salvar perfil agora' : 'Salvar preferencias'}</button></header>
+
+      <section className="panel profile-selector-panel">
+        <div className="profile-selector-copy"><span className="profile-selector-icon"><UserRoundCog size={20} /></span><div><strong>Perfil de configuracao</strong><small>Escolha um perfil e todas as configuracoes de texto, IA, imagens, SEO e destinos sao aplicadas. Enquanto ele estiver ativo, suas alteracoes sao salvas automaticamente nesse perfil.</small></div></div>
+        <div className="profile-selector-controls">
+          <label className="field profile-select-field"><span>Perfil ativo</span><select value={selectedProfileId} onChange={(e) => applyProfile(e.target.value)}><option value="">Sem perfil / preferencias locais</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+          <label className="field profile-name-field"><span>Novo perfil com as configuracoes atuais</span><input value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createProfileFromCurrent(); } }} placeholder="Ex.: Guest posts / Cliente Orbital" /></label>
+          <button className="btn primary profile-create-btn" type="button" onClick={createProfileFromCurrent}><Plus size={16} /> Criar perfil</button>
+        </div>
+        {profileStatus && <div className="profile-save-status">{profileStatus}</div>}
+      </section>
 
       <div className="writer-layout">
         <div className="writer-main">

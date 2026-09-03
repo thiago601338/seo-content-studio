@@ -7,7 +7,7 @@ const nav = [
   { to: '/textos', label: 'Textos', icon: Files },
   { to: '/fila', label: 'Fila e historico', icon: History },
   { to: '/sites', label: 'Sites WordPress', icon: Globe2 },
-  { to: '/modelos', label: 'Modelos', icon: FileText },
+  { to: '/perfis', label: 'Perfis', icon: FileText },
   { to: '/configuracoes', label: 'Configuracoes', icon: Settings },
 ];
 

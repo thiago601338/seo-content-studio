@@ -20,7 +20,8 @@ export function App() {
         <Route path="textos" element={<TextsPage />} />
         <Route path="fila" element={<QueuePage />} />
         <Route path="sites" element={<SitesPage />} />
-        <Route path="modelos" element={<PresetsPage />} />
+        <Route path="perfis" element={<PresetsPage />} />
+        <Route path="modelos" element={<Navigate to="/perfis" replace />} />
         <Route path="configuracoes" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

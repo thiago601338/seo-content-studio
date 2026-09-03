@@ -97,3 +97,8 @@ O Media Hub agora inicia em **Rapida — recomendada**. Nesse modo, as imagens u
 
 A OpenAI informa que `quality=low` e a opcao mais rapida para GPT Image e que prompts complexos podem levar ate cerca de 2 minutos; por isso o modo rapido tambem reduz a complexidade do prompt visual.
 
+
+
+## Perfis de configuracao (v3.2.0)
+
+A aba **Perfis** permite manter configuracoes separadas por cliente ou tipo de conteudo. No Gerador de artigos, escolha o perfil ativo no topo da pagina. As configuracoes sao carregadas imediatamente e, enquanto o perfil permanecer ativo, qualquer alteracao de texto, IA, imagens, SEO, publicacao, Drive ou direcionamento geral e salva automaticamente naquele perfil.
