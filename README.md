@@ -1,227 +1,250 @@
-# SEO Content Studio
+# Revista Ideal IA Studio
 
-Sistema privado para gerar artigos SEO em lote usando a API da OpenAI, com histórico no Supabase e deploy no Netlify.
+Aplicacao de producao de artigos SEO para **Netlify + Supabase**, com OpenAI, WordPress e Google Drive.
 
-## O que o sistema faz
+O fluxo foi desenhado para nao obrigar a publicacao. Todo artigo gerado fica salvo na aba **Textos** e, em cada lote, voce escolhe os destinos:
 
-Na tela de criação você informa somente:
+- somente Textos;
+- Textos + WordPress;
+- Textos + Google Drive;
+- Textos + WordPress + Google Drive.
 
-- quantidade de textos (1 a 120);
-- se deve criar imagem de capa;
-- palavra-chave;
-- URL que será aplicada nessa palavra-chave;
-- se o título deve conter a palavra-chave exata;
-- um **direcionamento livre para a IA**, onde você pode determinar tom, público, formato, abordagem, estrutura, pontos obrigatórios e até um alvo menor de palavras.
+## Recursos principais
 
-O sistema então:
+- Geracao em lote com palavra-chave, titulo opcional, palavras de apoio, briefing opcional e URL correspondente.
+- Tema e titulo automaticos quando os campos ficam vazios.
+- Geracao previa de titulo + H2/H3.
+- Editor de headings antes da redacao: editar, excluir, mudar H2/H3, mover e adicionar.
+- Capa opcional e de 0 a 8 imagens no corpo.
+- Aba **Textos** com biblioteca de tudo que ja foi gerado.
+- Visualizacao do artigo, copiar texto, copiar HTML e baixar HTML.
+- Publicacao WordPress opcional no momento da geracao ou depois, pela aba Textos.
+- Google Drive opcional no momento da geracao ou depois, pela aba Textos.
+- Google Docs com titulo, texto, links, capa e imagens internas.
+- Documentos do Drive liberados automaticamente como **qualquer pessoa com o link pode visualizar**.
+- Coluna com link do WordPress e coluna com link do Google Drive.
+- Fila e historico no Supabase.
+- Processamento longo em Netlify Background Functions.
+- Varios sites WordPress.
+- Supabase Auth + RLS.
+- Credenciais WordPress e tokens Google OAuth criptografados com AES-256-GCM.
 
-1. cria artigos em português do Brasil com até 800 palavras (alvo aproximado de 650 a 780);
-2. estrutura o conteúdo com introdução, H2/H3, listas quando úteis e boa escaneabilidade;
-3. cria meta description e resumo;
-4. insere exatamente um link na palavra-chave, de forma natural;
-5. evita keyword stuffing e repetição mecânica;
-6. varia o ângulo e o título dos textos de um mesmo lote;
-7. opcionalmente gera uma capa 16:9 usando a API de imagens da OpenAI;
-8. salva tudo no Supabase;
-9. mantém uma área persistente de **Gerações**, mostrando todos os lotes **na fila**, **em andamento**, **pausando** ou **pausados**, inclusive depois de atualizar a página;
-10. permite **Pausar**, **Retomar** e **Pausar todas** as gerações ativas;
-11. mantém uma aba de histórico com busca, visualização, copiar texto formatado, copiar HTML, excluir individualmente e **Excluir todos**.
-
-> Importante: nenhuma técnica garante posição no Google. O prompt foi construído para priorizar conteúdo útil, intenção de busca, profundidade temática e leitura natural — fatores que aumentam a qualidade editorial sem prometer ranking.
-
----
-
-# 1. Criar o projeto no Supabase
-
-1. Entre no Supabase e crie um projeto.
-2. Abra **SQL Editor**.
-3. Copie todo o conteúdo de `supabase/schema.sql`.
-4. Execute o SQL.
-
-Esse SQL cria:
-
-- `article_jobs`: controla os lotes de geração;
-- `articles`: guarda os textos;
-- bucket `article-images`: guarda as capas.
-
-O navegador não acessa as tabelas diretamente. Toda leitura/escrita passa pelas Functions do Netlify.
-
-## Dados que você precisa copiar do Supabase
-
-No painel do projeto, pegue:
-
-- **Project URL** -> será `SUPABASE_URL`;
-- **Secret key** (`sb_secret_...`) -> será `SUPABASE_SECRET_KEY`.
-
-Use a nova **Secret key**, e não coloque essa chave no frontend.
-
----
-
-# 2. Criar a chave da OpenAI
-
-Crie uma API key na plataforma da OpenAI.
-
-Você precisará dela como:
-
-`OPENAI_API_KEY`
-
-O projeto usa por padrão:
-
-- texto: `gpt-5.6-sol`;
-- imagem: `gpt-image-2`.
-
-Os dois modelos podem ser trocados depois somente alterando variáveis no Netlify, sem mexer no código.
-
----
-
-# 3. Colocar o projeto no Netlify
-
-A forma recomendada é subir esta pasta para um repositório GitHub e conectar o repositório ao Netlify.
-
-O arquivo `netlify.toml` já está configurado com:
-
-- build: `npm run build`;
-- pasta publicada: `dist`;
-- Functions: `netlify/functions`.
-
-## Variáveis de ambiente no Netlify
-
-Abra:
-
-**Project configuration -> Environment variables**
-
-Crie estas variáveis:
-
-```env
-OPENAI_API_KEY=sk-...
-OPENAI_TEXT_MODEL=gpt-5.6-sol
-OPENAI_IMAGE_MODEL=gpt-image-2
-SUPABASE_URL=https://SEU-PROJETO.supabase.co
-SUPABASE_SECRET_KEY=sb_secret_...
-APP_PASSWORD=UMA-SENHA-FORTE-SO-SUA
-```
-
-`APP_PASSWORD` é a senha usada para entrar no painel. Ela também impede que uma pessoa que descubra a URL do site use sua API da OpenAI.
-
-Depois das variáveis, faça um novo deploy.
-
----
-
-# 4. Como usar
-
-1. Abra o endereço do Netlify.
-2. Digite a senha definida em `APP_PASSWORD`.
-3. Na aba **Criar textos**, informe os campos básicos e, se quiser, escreva o **Direcionamento para a IA**.
-4. Clique em **Gerar textos**.
-5. O processamento ocorre em Background Function e a área **Gerações** mostra todos os lotes ativos. Eles não somem quando outro lote é criado ou quando a página é atualizada.
-6. Para interromper temporariamente um lote, use **Pausar**. Se um artigo já estiver sendo criado, ele pode terminar antes da pausa; nenhum novo artigo será iniciado depois que a pausa for reconhecida. Use **Retomar** para continuar.
-7. Abra **Meus textos**.
-8. Clique em qualquer artigo.
-9. Use:
-   - **Copiar texto** para colar formatado em editores como WordPress;
-   - **Copiar HTML** para usar no editor HTML do CMS.
-
-As capas ficam armazenadas no Supabase Storage e aparecem junto do artigo.
-
----
-
-# Segurança
-
-- A `OPENAI_API_KEY` nunca é enviada para o navegador.
-- A `SUPABASE_SECRET_KEY` nunca é enviada para o navegador.
-- O backend exige `APP_PASSWORD` em todas as rotas.
-- As tabelas do Supabase ficam com RLS ativado e sem acesso para `anon`/`authenticated`.
-- A Secret key do Supabase é usada somente nas Netlify Functions.
-
-Para um sistema com vários usuários, o próximo passo recomendado é trocar a senha única por Supabase Auth e políticas por usuário.
-
----
-
-# Estrutura
+## Arquitetura
 
 ```text
-seo-content-studio/
-├── src/
-│   ├── App.jsx
-│   ├── main.jsx
-│   └── styles.css
-├── netlify/
-│   └── functions/
-│       ├── _lib/
-│       │   ├── http.mjs
-│       │   ├── seo.mjs
-│       │   └── supabase.mjs
-│       ├── article.mjs
-│       ├── articles.mjs
-│       ├── delete-article.mjs
-│       ├── delete-all-articles.mjs
-│       ├── generate-background.mjs
-│       ├── health.mjs
-│       ├── job.mjs
-│       ├── jobs.mjs
-│       ├── pause-job.mjs
-│       ├── resume-job.mjs
-│       └── start-job.mjs
-├── supabase/
-│   ├── schema.sql
-│   ├── update-limit-120.sql
-│   ├── update-direcionamento.sql
-│   └── update-fila-pausa.sql
-├── .env.example
-├── index.html
-├── netlify.toml
-├── package.json
-└── README.md
+React / Netlify
+     |
+     +---- Supabase Auth + Postgres + Storage
+     |
+     +---- Netlify Functions ---- OpenAI
+     |                     |
+     |                     +---- WordPress REST API (opcional)
+     |                     +---- Google Drive + Google Docs (opcional)
+     |
+     +---- Aba Textos
 ```
 
-# Desenvolvimento local
+As chaves privadas nao sao enviadas ao navegador.
 
-Com Node.js instalado:
+---
+
+## 1. GitHub
+
+Crie um repositorio vazio e envie o conteudo desta pasta.
+
+```bash
+git init
+git add .
+git commit -m "Revista Ideal IA Studio 2.1.0"
+git branch -M main
+git remote add origin https://github.com/SEU-USUARIO/revistaideal-ai-studio.git
+git push -u origin main
+```
+
+Nao envie `.env`.
+
+---
+
+## 2. Supabase
+
+Crie um projeto e execute, nesta ordem, no **SQL Editor**:
+
+```text
+supabase/migrations/001_init.sql
+supabase/migrations/002_texts_drive_destinations.sql
+```
+
+A segunda migration:
+
+- permite artigos sem site WordPress;
+- adiciona destinos WordPress/Drive;
+- adiciona links do Google Drive;
+- adiciona capa e midias geradas;
+- cria tabelas seguras de OAuth do Google;
+- cria o bucket `article-media` para as imagens geradas.
+
+O bucket de imagens e publico porque o Google Docs precisa buscar essas imagens por URL ao montar o documento. Os nomes usam UUIDs de usuario/artigo e nao sao listados publicamente pela aplicacao.
+
+Crie seu usuario em **Authentication -> Users**. Para uso privado, desative cadastro publico.
+
+Copie:
+
+- Project URL;
+- Publishable Key;
+- Secret Key.
+
+---
+
+## 3. Netlify
+
+Importe o repositorio GitHub no Netlify. O `netlify.toml` ja configura:
+
+- build: `npm run build`;
+- publish: `dist`;
+- functions: `netlify/functions`;
+- scheduled queue dispatcher.
+
+Cadastre as variaveis:
+
+```text
+VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_...
+OPENAI_API_KEY=sk-...
+OPENAI_TEXT_MODEL=gpt-5.6-terra
+OPENAI_IMAGE_MODEL=gpt-image-2
+SITES_ENCRYPTION_KEY=...
+INTERNAL_DISPATCH_SECRET=...
+APP_URL=https://SEU-APP.netlify.app
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+Gerar chave de criptografia:
+
+```bash
+openssl rand -base64 32
+```
+
+Gerar segredo interno:
+
+```bash
+openssl rand -hex 32
+```
+
+---
+
+## 4. Conectar Google Drive
+
+No Google Cloud Console:
+
+1. Crie ou selecione um projeto.
+2. Ative **Google Drive API**.
+3. Ative **Google Docs API**.
+4. Configure a tela de consentimento OAuth.
+5. Crie um **OAuth Client ID -> Web application**.
+6. Em Authorized redirect URIs, cadastre exatamente:
+
+```text
+https://SEU-APP.netlify.app/api/google-drive-callback
+```
+
+7. Copie Client ID e Client Secret para `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Netlify.
+8. Configure `APP_URL` com a URL publica do app, sem barra final.
+9. Faça um novo deploy.
+10. Entre no sistema e abra **Configuracoes -> Google Drive -> Conectar Google Drive**.
+
+A aplicacao solicita `drive.file`, que permite criar e administrar os arquivos usados pela propria aplicacao.
+
+Quando um Google Doc e criado, a aplicacao cria uma permissao `anyone / reader`, portanto o link da coluna Drive abre para qualquer pessoa que receba esse link.
+
+---
+
+## 5. WordPress opcional
+
+O WordPress nao e mais obrigatorio para gerar um artigo.
+
+Para publicar em um site:
+
+1. No WordPress, abra **Usuarios -> Perfil**.
+2. Crie uma **Application Password**.
+3. No app, abra **Sites WordPress**.
+4. Cadastre URL, usuario e Application Password.
+5. Teste/sincronize o site.
+
+O companion plugin em `wordpress-connector/` continua opcional e serve para os metadados SEO do tema Revista Ideal.
+
+---
+
+## 6. Fluxo de uso
+
+Na tela **Gerar artigos**:
+
+1. Cole palavras-chave.
+2. Opcionalmente informe titulos, palavras de apoio, briefing e URLs.
+3. Monte a lista.
+4. Gere os titulos + headings.
+5. Edite/exclua H2/H3.
+6. Configure texto, SEO e imagens.
+7. Em **Destinos e publicacao**, escolha:
+   - Salvar em Textos: sempre ativo;
+   - Publicar no WordPress: opcional;
+   - Criar Google Doc: opcional.
+8. Gere os artigos.
+
+### Se escolher somente Textos
+
+O artigo e gerado normalmente e fica em **Textos**. Depois voce pode:
+
+- abrir;
+- copiar texto;
+- copiar HTML;
+- baixar HTML;
+- escolher um WordPress e publicar;
+- criar o Google Doc posteriormente.
+
+### Se escolher Google Drive
+
+O Google Doc recebe:
+
+- titulo;
+- excerpt, quando houver;
+- texto completo;
+- headings;
+- hyperlinks;
+- imagem de capa, se a capa foi ativada;
+- imagens internas, se foram ativadas.
+
+O link aparece na coluna **Google Drive** da aba Textos e tambem no historico.
+
+---
+
+## 7. Desenvolvimento local
+
+Use Node.js 22.
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-Para testar as Functions localmente com comportamento mais próximo do Netlify, use o Netlify CLI e as mesmas variáveis do `.env.example`.
+Validacao:
 
-## Atualização para 120 textos por lote
+```bash
+npm run typecheck
+npm run build
+```
 
-Se você já executou o `supabase/schema.sql` anteriormente, rode uma vez no SQL Editor do Supabase o arquivo:
+---
 
-`supabase/update-limit-120.sql`
+## 8. Seguranca
 
-O processamento de lotes grandes é dividido automaticamente em blocos menores para reduzir o risco de timeout das Background Functions do Netlify. Cada artigo é orientado a ficar entre cerca de 650 e 780 palavras, com limite máximo de 800 palavras no conteúdo.
-
-## Atualização: direcionamento livre e exclusão de textos
-
-Se seu Supabase já estava configurado antes desta versão, execute **uma única vez** no SQL Editor:
-
-`supabase/update-direcionamento.sql`
-
-Depois substitua os arquivos do GitHub pelos desta versão e aguarde o novo deploy do Netlify. Não é necessário recriar o projeto, as chaves ou as tabelas.
-
-Na aba **Meus textos**, cada item agora possui um botão **Excluir**, e no topo há **Excluir todos**. Ao excluir um artigo, a imagem de capa vinculada também é apagada do Storage. A exclusão total é bloqueada enquanto houver uma geração em andamento, para evitar que novos textos reapareçam durante a limpeza.
-
-
-## Atualização: gerações persistentes, fila e pausa
-
-Se o Supabase já estava configurado antes desta versão, execute **uma única vez** no SQL Editor:
-
-`supabase/update-fila-pausa.sql`
-
-Depois publique os arquivos desta versão no GitHub/Netlify. Não é necessário recriar o Supabase nem alterar as chaves.
-
-A área **Gerações** consulta os jobs diretamente no Supabase a cada poucos segundos, portanto todos os lotes com status **Na fila**, **Em andamento**, **Pausando** ou **Pausada** continuam visíveis mesmo depois de recarregar o site.
-
-A pausa é cooperativa: se a solicitação chegar enquanto a OpenAI já está criando um texto (ou uma capa), esse item pode terminar e ser salvo. O worker então reconhece a pausa e não inicia o próximo item. Isso evita interromper um artigo pela metade e permite retomar do ponto já concluído.
-
-## Correção: pausa imediata + exclusão com geração ativa
-
-Esta versão corrige dois comportamentos da versão anterior:
-
-- **Pausa imediata:** o job muda para `paused` na própria requisição de pausa. A coluna `run_version` invalida workers antigos, impedindo que uma execução anterior grave novos textos após a pausa.
-- **Excluir todos:** a exclusão não é mais bloqueada por jobs ativos. O backend apaga somente os textos que já existiam no instante do clique; se uma geração continuar ativa, textos criados depois desse instante podem voltar a aparecer.
-- **Excluir um texto:** uma falha ao remover a imagem do Storage não impede a exclusão do texto da biblioteca.
-
-Para atualizar uma instalação existente, execute primeiro `supabase/update-pausa-exclusao-fix.sql` no SQL Editor do Supabase e depois publique esta versão no Netlify.
+- `SUPABASE_SECRET_KEY`, OpenAI e Google Client Secret ficam somente no Netlify.
+- Application Passwords WordPress ficam criptografadas.
+- Access/refresh tokens Google ficam criptografados.
+- RLS protege sites, lotes, presets e artigos por usuario.
+- A tabela de tokens Google nao e acessivel pelo navegador.
+- Os Google Docs sao publicos por link somente quando voce manda criar o documento.
+- O WordPress nunca recebe um artigo se **Publicar no WordPress** estiver desativado.

@@ -1,0 +1,24 @@
+# Checklist de publicacao
+
+- [ ] Criar repositorio no GitHub.
+- [ ] Criar projeto no Supabase.
+- [ ] Executar `supabase/migrations/001_init.sql`.
+- [ ] Executar `supabase/migrations/002_texts_drive_destinations.sql`.
+- [ ] Criar usuario em Supabase Auth.
+- [ ] Importar o GitHub no Netlify.
+- [ ] Cadastrar variaveis do `.env.example`.
+- [ ] Gerar e guardar `SITES_ENCRYPTION_KEY`.
+- [ ] Gerar `INTERNAL_DISPATCH_SECRET`.
+- [ ] Configurar `APP_URL`.
+- [ ] Ativar Google Drive API no Google Cloud.
+- [ ] Ativar Google Docs API no Google Cloud.
+- [ ] Criar OAuth Client ID Web.
+- [ ] Cadastrar `/api/google-drive-callback` como redirect URI.
+- [ ] Cadastrar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Netlify.
+- [ ] Fazer novo deploy.
+- [ ] Entrar em Configuracoes e conectar o Google Drive.
+- [ ] Se usar WordPress, cadastrar site + Application Password.
+- [ ] Testar um artigo com somente `Salvar em Textos`.
+- [ ] Testar `Criar Google Doc` e conferir capa/imagens.
+- [ ] Testar publicacao WordPress como rascunho.
+- [ ] Somente depois habilitar publicacao automatica em lote.
