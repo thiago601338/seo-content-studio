@@ -1,0 +1,31 @@
+{
+  "name": "revistaideal-ai-studio",
+  "private": true,
+  "version": "3.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "dev:vite": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false",
+    "prebuild": "node scripts/clean-legacy.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.1.1"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^4.2.5",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "netlify-cli": "^23.1.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
