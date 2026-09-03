@@ -16,5 +16,8 @@
   to = "/index.html"
   status = 200
 
+[functions."process-article"]
+  background = true
+
 [functions."dispatch-queue"]
-  schedule = "*/5 * * * *"
+  schedule = "*/2 * * * *"

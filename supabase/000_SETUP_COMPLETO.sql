@@ -1,10 +1,43 @@
--- REVISTA IDEAL IA STUDIO 3.0 - INSTALACAO COMPLETA
+-- REVISTA IDEAL IA STUDIO 3.0.1 - INSTALACAO COMPLETA / COMPATIVEL COM BANCO ANTIGO
 
--- Execute este arquivo uma unica vez em um projeto NOVO do Supabase.
+-- Pode ser executado em projeto NOVO ou no Supabase usado pelo SEO Content Studio anterior.
 
 -- Ele consolida as migrations 001, 002 e 003.
 
 begin;
+
+-- COMPATIBILIDADE COM O SEO CONTENT STUDIO ANTIGO
+-- Se este Supabase ja tiver a tabela public.articles do sistema anterior
+-- (que nao possuia user_id), ela e arquivada em vez de ser apagada.
+do $$
+declare
+  suffix text := to_char(clock_timestamp(), 'YYYYMMDD_HH24MISS');
+  legacy_articles_name text;
+  legacy_jobs_name text;
+  old_articles_detected boolean := false;
+begin
+  if to_regclass('public.articles') is not null
+     and not exists (
+       select 1
+       from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'articles'
+         and column_name = 'user_id'
+     ) then
+    legacy_articles_name := 'articles_legacy_' || suffix;
+    execute format('alter table public.articles rename to %I', legacy_articles_name);
+    old_articles_detected := true;
+    raise notice 'Tabela antiga public.articles arquivada como public.%', legacy_articles_name;
+  end if;
+
+  -- O sistema antigo tambem usava article_jobs. O app novo nao usa esse nome,
+  -- mas arquivamos junto para deixar claro que pertence ao sistema anterior.
+  if old_articles_detected and to_regclass('public.article_jobs') is not null then
+    legacy_jobs_name := 'article_jobs_legacy_' || suffix;
+    execute format('alter table public.article_jobs rename to %I', legacy_jobs_name);
+    raise notice 'Tabela antiga public.article_jobs arquivada como public.%', legacy_jobs_name;
+  end if;
+end $$;
 
 create extension if not exists pgcrypto;
 

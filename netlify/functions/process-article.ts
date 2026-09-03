@@ -1,4 +1,3 @@
-import type { Config } from '@netlify/functions';
 import { userOrInternal } from './_lib/auth';
 import { decryptSecret } from './_lib/crypto';
 import { publishArticleToWordPress, saveArticleToDrive } from './_lib/destinations';
@@ -404,4 +403,3 @@ export default async (req: Request) => {
   }
 };
 
-export const config: Config = { path: '/api/process-article', background: true };
