@@ -1,4 +1,4 @@
-# Revista Ideal IA Studio 3.0
+# Revista Ideal IA Studio 3.2.1
 
 Sistema completo de producao de artigos SEO para **Netlify + Supabase + OpenAI**, baseado no layout e no fluxo do Revista Ideal IA Studio enviado como referencia.
 
@@ -8,7 +8,8 @@ Sistema completo de producao de artigos SEO para **Netlify + Supabase + OpenAI**
 - campo **Quantidade** para gerar variacoes de uma unica palavra-chave sem repetir linhas;
 - opcao para obrigar a **palavra-chave no titulo** quando o titulo for automatico;
 - limite de **800 palavras por artigo** no painel, prompt e backend;
-- listas de palavras-chave, titulos, palavras de apoio, briefings e URLs;
+- tabela unica de artigos com palavra-chave, titulo, apoio, briefing e URL;
+- entrada em massa por modal **Adicionar em lote** e importacao CSV;
 - titulo/tema automaticos quando os campos ficam vazios;
 - **Direcionamento geral da IA** para controlar estilo e regras de todo o lote;
 - geracao previa de titulo + H2/H3;

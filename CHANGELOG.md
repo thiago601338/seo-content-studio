@@ -1,3 +1,13 @@
+# 3.2.1 - Lista unica de artigos
+
+- Remove os cinco campos grandes duplicados da tela principal do Gerador.
+- A tabela passa a ser a unica lista oficial do lote.
+- Novo botao **Adicionar em lote** abre um modal para colar palavras-chave, links, titulos, palavras de apoio e briefings.
+- Quantidade de variacoes fica dentro do modal e so e aplicada quando ha uma unica entrada.
+- Adicionar em lote e importar CSV agora acrescentam itens diretamente a tabela sem manter uma segunda lista paralela.
+- Linhas vazias deixam de entrar em planejamento e geracao.
+- Nenhuma migration nova e necessaria.
+
 # 3.2.0 - Perfis de configuracao
 
 - Nova aba **Perfis** no lugar de Modelos.

@@ -1,4 +1,4 @@
-import { Cloud, FileUp, Image, Link2, ListTree, Plus, Rocket, Save, Settings2, Sparkles, UserRoundCog, WandSparkles } from 'lucide-react';
+import { Cloud, FileUp, Image, Link2, ListTree, Plus, Rocket, Save, Settings2, Sparkles, UserRoundCog, WandSparkles, X } from 'lucide-react';
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArticleRow } from '../components/ArticleRow';
@@ -6,7 +6,7 @@ import { OutlineCard } from '../components/OutlineCard';
 import { SectionCard } from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
 import { api, triggerBackground } from '../lib/api';
-import { alignedFlexible, alignedLines, lines, parseCsv } from '../lib/csv';
+import { alignedFlexible, alignedLines, parseCsv } from '../lib/csv';
 import { supabase } from '../lib/supabase';
 import type { ArticleDraftRow, Outline, Site, WriterConfig } from '../lib/types';
 import { MAX_BATCH, MAX_WORDS, MIN_WORDS, normalizeWriterConfig, readLocalWriterConfig, toProfileConfig } from '../lib/writerConfig';
@@ -23,6 +23,7 @@ export function WriterPage() {
   const [rows, setRows] = useState<ArticleDraftRow[]>([emptyRow()]);
   const [config, setConfig] = useState<WriterConfig>(() => readLocalWriterConfig());
   const [bulk, setBulk] = useState({ keywords: '', titles: '', support: '', topics: '', links: '' });
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [extraAnchors, setExtraAnchors] = useState('');
   const [extraUrls, setExtraUrls] = useState('');
@@ -140,21 +141,39 @@ export function WriterPage() {
   }
   function updateRow(localId: string, next: ArticleDraftRow) { setRows((all) => all.map((row) => row.local_id === localId ? next : row)); }
   function removeRow(localId: string) { setRows((all) => all.filter((row) => row.local_id !== localId)); }
+  function rowHasContent(row: ArticleDraftRow) {
+    return Boolean([row.keyword, row.target_url, row.requested_title, row.topic, row.support_keywords].some((value) => String(value || '').trim()));
+  }
+  function appendRowsToTable(incoming: ArticleDraftRow[]) {
+    const current = rows.filter(rowHasContent);
+    const cleanIncoming = incoming.filter(rowHasContent);
+    const available = Math.max(0, MAX_BATCH - current.length);
+    const additions = cleanIncoming.slice(0, available);
+    const next = [...current, ...additions];
+    setRows(next.length ? next : [emptyRow()]);
+    return { added: additions.length, dropped: Math.max(0, cleanIncoming.length - additions.length) };
+  }
 
   function mountBulkRows() {
     const k = alignedFlexible(bulk.keywords), t = alignedLines(bulk.titles), s = alignedLines(bulk.support), b = alignedLines(bulk.topics), l = alignedFlexible(bulk.links);
     const sourceCount = Math.max(k.length, t.length, s.length, b.length, l.length);
-    if (!sourceCount) { setRows([emptyRow()]); return; }
+    if (!sourceCount) { setMessage('Cole pelo menos uma palavra-chave, titulo, briefing ou link para adicionar em lote.'); return; }
     const requestedCount = sourceCount === 1 ? Math.max(1, Math.min(MAX_BATCH, Number(quantity || 1))) : sourceCount;
-    if (sourceCount > 1 && quantity > 1) setMessage('Como voce informou varias linhas, a quantidade e definida pelas proprias linhas. O campo Quantidade serve para criar variacoes quando existe apenas uma entrada.');
-    if (requestedCount > MAX_BATCH || sourceCount > MAX_BATCH) setMessage(`O limite por lote e de ${MAX_BATCH} textos. As primeiras ${MAX_BATCH} linhas foram mantidas.`);
     const safeCount = Math.min(requestedCount, MAX_BATCH);
-    setRows(Array.from({ length: safeCount }, (_, i) => {
+    const incoming = Array.from({ length: safeCount }, (_, i) => {
       const sourceIndex = sourceCount === 1 ? 0 : i;
       return {
         local_id: id(), selected: true, keyword: k[sourceIndex] || '', requested_title: t[sourceIndex] || '', support_keywords: s[sourceIndex] || '', topic: b[sourceIndex] || '', target_url: l[sourceIndex] || '',
-      };
-    }).filter((r) => r.keyword || r.requested_title || r.support_keywords || r.topic || r.target_url));
+      } as ArticleDraftRow;
+    }).filter(rowHasContent);
+    const { added, dropped } = appendRowsToTable(incoming);
+    if (!added) { setMessage(`A lista ja atingiu o limite de ${MAX_BATCH} textos.`); return; }
+    if (dropped) setMessage(`${added} texto(s) adicionado(s). ${dropped} nao couberam porque o limite do lote e ${MAX_BATCH}.`);
+    else if (sourceCount > 1 && quantity > 1) setMessage(`${added} linha(s) adicionada(s). Como voce informou varias linhas, cada linha vale um texto; a quantidade de variacoes so e usada quando existe uma unica entrada.`);
+    else setMessage(`${added} texto(s) adicionado(s) a lista.`);
+    setBulk({ keywords: '', titles: '', support: '', topics: '', links: '' });
+    setQuantity(1);
+    setBulkOpen(false);
   }
 
   async function importCsv(event: ChangeEvent<HTMLInputElement>) {
@@ -163,9 +182,11 @@ export function WriterPage() {
     const headers = parsed[0].map((h) => h.toLowerCase().trim());
     const indexOf = (...names: string[]) => headers.findIndex((h) => names.includes(h));
     const ki = indexOf('palavra-chave', 'palavra chave', 'keyword'), ti = indexOf('titulo', 'título', 'title'), si = indexOf('apoio', 'palavras de apoio', 'support'), bi = indexOf('tema', 'briefing', 'topic'), li = indexOf('link', 'url');
-    const body = parsed.slice(1).map((r) => ({ local_id: id(), selected: true, keyword: r[ki] || '', requested_title: r[ti] || '', support_keywords: r[si] || '', topic: r[bi] || '', target_url: r[li] || '' }));
-    if (body.length > MAX_BATCH) setMessage(`O CSV possui ${body.length} linhas. O limite por lote e de ${MAX_BATCH}; as demais foram ignoradas.`);
-    setRows(body.length ? body.slice(0, MAX_BATCH) : [emptyRow()]);
+    const body = parsed.slice(1).map((r) => ({ local_id: id(), selected: true, keyword: r[ki] || '', requested_title: r[ti] || '', support_keywords: r[si] || '', topic: r[bi] || '', target_url: r[li] || '' } as ArticleDraftRow)).filter(rowHasContent);
+    const { added, dropped } = appendRowsToTable(body);
+    if (dropped) setMessage(`${added} linha(s) do CSV adicionada(s). ${dropped} foram ignoradas porque o limite do lote e ${MAX_BATCH}.`);
+    else if (added) setMessage(`${added} linha(s) do CSV adicionada(s) a lista.`);
+    else setMessage(`A lista ja atingiu o limite de ${MAX_BATCH} textos.`);
     event.target.value = '';
   }
 
@@ -202,7 +223,7 @@ export function WriterPage() {
 
   async function planAll() {
     setPlanningAll(true); setMessage('');
-    const selected = rows.filter((r) => r.selected).slice(0, MAX_BATCH);
+    const selected = rows.filter((r) => r.selected && rowHasContent(r)).slice(0, MAX_BATCH);
     for (let i = 0; i < selected.length; i += 4) {
       await Promise.allSettled(selected.slice(i, i + 4).map((row) => plan(row)));
     }
@@ -217,7 +238,7 @@ export function WriterPage() {
   async function generateArticles() {
     if (!user) return;
     if (config.publish_to_wordpress && !config.site_id) { setMessage('Para publicar no WordPress, selecione um site. Se quiser apenas o texto, desative a publicacao.'); return; }
-    const chosen = rows.filter((r) => r.selected);
+    const chosen = rows.filter((r) => r.selected && rowHasContent(r));
     if (chosen.length > MAX_BATCH) { setMessage(`Selecione no maximo ${MAX_BATCH} artigos por lote.`); return; }
     if (!chosen.length) { setMessage('Selecione pelo menos um artigo.'); return; }
     const invalid = chosen.find((r) => !(r.keyword || r.topic || r.requested_title || r.target_url) || (r.target_url && !r.keyword));
@@ -282,21 +303,19 @@ export function WriterPage() {
 
       <div className="writer-layout">
         <div className="writer-main">
-          <SectionCard title="Artigos em lote" description={`Cole listas alinhadas ou importe CSV. Titulo e briefing podem ficar vazios. Ate ${MAX_BATCH} textos por lote.`} icon={<ListTree size={18} />}>
-            <div className="quick-quantity"><label className="field"><span>Quantidade de textos</span><input type="number" min={1} max={MAX_BATCH} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(MAX_BATCH, Number(e.target.value) || 1)))} /></label><small>Se houver apenas uma entrada, o sistema cria essa quantidade de variacoes. Com varias linhas, cada linha vale um texto.</small></div>
-            <div className="bulk-grid labels"><span>Palavras-chave</span><span>Titulos opcionais</span><span>Palavras de apoio</span><span>Tema / briefing opcional</span><span>Links respectivos</span></div>
-            <div className="bulk-grid">
-              <textarea value={bulk.keywords} onChange={(e) => setBulk({ ...bulk, keywords: e.target.value })} placeholder={'curso de ingles\nmontador de moveis\nseguranca do trabalho'} />
-              <textarea value={bulk.titles} onChange={(e) => setBulk({ ...bulk, titles: e.target.value })} placeholder={'deixe vazio para a IA\nTitulo manual opcional'} />
-              <textarea value={bulk.support} onChange={(e) => setBulk({ ...bulk, support: e.target.value })} placeholder={'ingles online, aulas\nmoveis planejados'} />
-              <textarea value={bulk.topics} onChange={(e) => setBulk({ ...bulk, topics: e.target.value })} placeholder={'deixe vazio para a IA inferir'} />
-              <textarea value={bulk.links} onChange={(e) => setBulk({ ...bulk, links: e.target.value })} placeholder={'https://site.com/a\nhttps://site.com/b'} />
+          <SectionCard title="Artigos em lote" description={`A tabela abaixo e a unica lista do lote. Edite diretamente, adicione linhas, cole em lote ou importe CSV. Ate ${MAX_BATCH} textos.`} icon={<ListTree size={18} />}>
+            <div className="batch-list-toolbar">
+              <div className="action-row">
+                <button className="btn dark" type="button" disabled={rows.filter(rowHasContent).length >= MAX_BATCH} onClick={() => setRows((r) => r.filter(rowHasContent).length >= MAX_BATCH ? r : [...r.filter(rowHasContent), emptyRow()])}><Plus size={16} /> Adicionar linha</button>
+                <button className="btn ghost" type="button" onClick={() => setBulkOpen(true)}><WandSparkles size={16} /> Adicionar em lote</button>
+                <label className="btn ghost file-btn"><FileUp size={16} /> Importar CSV<input type="file" accept=".csv,text/csv" onChange={importCsv} /></label>
+              </div>
+              <span className="muted">{rows.filter(rowHasContent).length} texto(s) na lista</span>
             </div>
-            <div className="action-row"><button className="btn dark" type="button" onClick={mountBulkRows}><WandSparkles size={16} /> Montar lista</button><label className="btn ghost file-btn"><FileUp size={16} /> Importar CSV<input type="file" accept=".csv,text/csv" onChange={importCsv} /></label><button className="btn ghost" type="button" disabled={rows.length >= MAX_BATCH} onClick={() => setRows((r) => r.length >= MAX_BATCH ? r : [...r, emptyRow()])}><Plus size={16} /> Adicionar linha</button></div>
 
             <div className="article-grid-head"><span>#</span><span>Palavra-chave</span><span>Titulo</span><span>Apoio</span><span>Tema</span><span>Link</span><span>Status</span></div>
             <div className="article-rows">{rows.map((row, index) => <ArticleRow key={row.local_id} row={row} index={index} onChange={(next) => updateRow(row.local_id, next)} onRemove={() => removeRow(row.local_id)} />)}</div>
-            <div className="action-row spread"><span className="muted">{rows.filter((r) => r.selected).length} selecionado(s) de {MAX_BATCH} max.</span><button className="btn primary" type="button" disabled={planningAll} onClick={planAll}><Sparkles size={16} /> {planningAll ? 'Gerando estruturas...' : 'Gerar titulos + headings'}</button></div>
+            <div className="action-row spread"><span className="muted">{rows.filter((r) => r.selected && rowHasContent(r)).length} selecionado(s) de {MAX_BATCH} max.</span><button className="btn primary" type="button" disabled={planningAll} onClick={planAll}><Sparkles size={16} /> {planningAll ? 'Gerando estruturas...' : 'Gerar titulos + headings'}</button></div>
           </SectionCard>
 
           <SectionCard title="Direcionamento geral da IA" description="Estas instrucoes valem para todos os textos do lote e podem ser tao especificas quanto voce quiser." icon={<Sparkles size={18} />} accent>
@@ -368,6 +387,33 @@ export function WriterPage() {
           </SectionCard>
         </aside>
       </div>
+
+      {bulkOpen && <div className="text-modal-backdrop" onClick={() => setBulkOpen(false)}>
+        <section className="bulk-entry-modal" onClick={(e) => e.stopPropagation()}>
+          <header>
+            <div><small>Preenchimento rapido</small><h2>Adicionar textos em lote</h2><p>Cole uma informacao por linha. Campos opcionais podem ficar vazios; as linhas sao alinhadas pela mesma posicao.</p></div>
+            <button type="button" className="icon-btn" onClick={() => setBulkOpen(false)} title="Fechar"><X size={18} /></button>
+          </header>
+          <div className="bulk-entry-body">
+            <div className="bulk-entry-grid">
+              <label className="field"><span>Palavras-chave</span><textarea rows={7} value={bulk.keywords} onChange={(e) => setBulk({ ...bulk, keywords: e.target.value })} placeholder={'clinica de recuperacao\nclinica de reabilitacao'} /></label>
+              <label className="field"><span>Links respectivos</span><textarea rows={7} value={bulk.links} onChange={(e) => setBulk({ ...bulk, links: e.target.value })} placeholder={'https://site.com/recuperacao\nhttps://site.com/reabilitacao'} /></label>
+              <label className="field"><span>Titulos opcionais</span><textarea rows={6} value={bulk.titles} onChange={(e) => setBulk({ ...bulk, titles: e.target.value })} placeholder={'deixe vazio para a IA\nTitulo manual opcional'} /></label>
+              <label className="field"><span>Palavras de apoio</span><textarea rows={6} value={bulk.support} onChange={(e) => setBulk({ ...bulk, support: e.target.value })} placeholder={'tratamento, apoio familiar\nreabilitacao, acompanhamento'} /></label>
+              <label className="field bulk-entry-wide"><span>Briefings opcionais</span><textarea rows={5} value={bulk.topics} onChange={(e) => setBulk({ ...bulk, topics: e.target.value })} placeholder={'Como escolher uma clinica de recuperacao\nQuando buscar uma clinica de reabilitacao'} /></label>
+            </div>
+            <div className="bulk-entry-quantity">
+              <label className="field"><span>Quantidade de variacoes</span><input type="number" min={1} max={MAX_BATCH} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(MAX_BATCH, Number(e.target.value) || 1)))} /></label>
+              <small>Usado somente quando voce informar uma unica entrada. Se colar varias linhas, cada linha vira um texto.</small>
+            </div>
+          </div>
+          <footer>
+            <button className="btn ghost" type="button" onClick={() => setBulkOpen(false)}>Cancelar</button>
+            <button className="btn primary" type="button" onClick={mountBulkRows}><Plus size={16} /> Adicionar a tabela</button>
+          </footer>
+        </section>
+      </div>}
+
     </div>
   );
 }
