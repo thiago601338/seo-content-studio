@@ -68,6 +68,7 @@ export type WriterConfig = {
   body_images: number;
   image_size: string;
   image_quality: string;
+  image_performance: 'fast' | 'balanced' | 'quality';
   image_style: string;
   internal_links: number;
   extra_links: Array<{ anchor: string; url: string }>;

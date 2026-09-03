@@ -91,3 +91,9 @@ O instalador `supabase/000_SETUP_COMPLETO.sql` agora detecta automaticamente a t
 ## Correcao de build 3.0.2
 
 Se o Netlify mostrar `Property env does not exist on type ImportMeta` ou erro de tipo em `background`, use esta versao 3.0.2 completa. O arquivo `src/vite-env.d.ts` declara as variaveis Vite e a funcao `process-article` e marcada como background pelo `netlify.toml`.
+## Imagens mais rapidas (3.1.0)
+
+O Media Hub agora inicia em **Rapida — recomendada**. Nesse modo, as imagens usam qualidade `low`, JPEG comprimido e geracao paralela em pequenos blocos. O modo Equilibrada usa qualidade media e o modo Qualidade maxima prioriza acabamento, mas pode levar bem mais tempo.
+
+A OpenAI informa que `quality=low` e a opcao mais rapida para GPT Image e que prompts complexos podem levar ate cerca de 2 minutos; por isso o modo rapido tambem reduz a complexidade do prompt visual.
+

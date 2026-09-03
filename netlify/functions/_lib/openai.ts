@@ -99,46 +99,62 @@ export type GeneratedImage = {
   extension: string;
 };
 
+function imageFormatMeta(format: string) {
+  if (format === 'jpeg' || format === 'jpg') return { mime: 'image/jpeg', extension: 'jpg' };
+  if (format === 'png') return { mime: 'image/png', extension: 'png' };
+  return { mime: 'image/webp', extension: 'webp' };
+}
+
 export async function generateImage(options: {
   prompt: string;
   size?: string;
   quality?: string;
   model?: string;
+  outputFormat?: 'jpeg' | 'webp' | 'png';
+  compression?: number;
 }): Promise<GeneratedImage> {
+  const outputFormat = options.outputFormat || 'jpeg';
+  const payload: Record<string, unknown> = {
+    model: options.model || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+    prompt: options.prompt,
+    size: options.size || '1536x1024',
+    quality: options.quality || 'low',
+    output_format: outputFormat,
+    n: 1,
+  };
+  if (outputFormat === 'jpeg' || outputFormat === 'webp') {
+    payload.output_compression = Math.max(1, Math.min(100, Number(options.compression ?? 82)));
+  }
+
   const response = await fetchWithRetry(IMAGES_URL, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey()}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      model: options.model || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
-      prompt: options.prompt,
-      size: options.size || '1536x1024',
-      quality: options.quality || 'medium',
-      output_format: 'webp',
-      n: 1,
-    }),
+    body: JSON.stringify(payload),
   }, 2);
   const data = await response.json() as any;
   const item = data?.data?.[0];
   if (!item) throw new Error('A OpenAI nao retornou imagem.');
 
   if (item.b64_json) {
+    const meta = imageFormatMeta(outputFormat);
     return {
       bytes: Uint8Array.from(Buffer.from(item.b64_json, 'base64')),
-      mime: 'image/webp',
-      extension: 'webp',
+      mime: meta.mime,
+      extension: meta.extension,
     };
   }
   if (item.url) {
     const img = await fetch(item.url);
     if (!img.ok) throw new Error('Falha ao baixar a imagem gerada.');
     const buffer = new Uint8Array(await img.arrayBuffer());
+    const contentType = img.headers.get('content-type') || imageFormatMeta(outputFormat).mime;
     return {
       bytes: buffer,
-      mime: img.headers.get('content-type') || 'image/webp',
-      extension: (img.headers.get('content-type') || '').includes('png') ? 'png' : 'webp',
+      mime: contentType,
+      extension: contentType.includes('jpeg') ? 'jpg' : contentType.includes('png') ? 'png' : 'webp',
     };
   }
   throw new Error('Formato de imagem inesperado na resposta da OpenAI.');

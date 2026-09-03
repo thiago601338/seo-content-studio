@@ -137,6 +137,56 @@ async function progress(supabase: ReturnType<typeof adminSupabase>, id: string, 
   if (!data) throw new ExecutionStopped('Execucao pausada, cancelada ou substituida.');
 }
 
+
+type MediaTask = {
+  kind: 'cover' | 'body';
+  slot: number;
+  prompt: string;
+  alt: string;
+};
+
+function cleanPrompt(value: string, max = 480) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function mediaPerformance(cfg: any) {
+  const mode = ['fast', 'balanced', 'quality'].includes(cfg.image_performance) ? cfg.image_performance : 'fast';
+  return {
+    mode,
+    fast: mode === 'fast',
+    quality: mode === 'fast' ? 'low' : mode === 'quality' ? 'high' : (cfg.image_quality || 'medium'),
+    parallelism: mode === 'quality' ? 1 : 2,
+    compression: mode === 'fast' ? 78 : mode === 'balanced' ? 84 : 90,
+  };
+}
+
+function taskPrompt(base: string, fallback: string, style: string, fast: boolean) {
+  const subject = cleanPrompt(base || fallback, fast ? 360 : 1200) || fallback;
+  if (fast) return `${subject}. Estilo: ${cleanPrompt(style, 120)}. Composicao simples e limpa, foco claro no assunto, sem texto, sem logotipos, sem marcas d'agua.`;
+  return `${subject}\nEstilo solicitado: ${style}. Sem texto sobreposto, sem marcas d'agua.`;
+}
+
+async function withImageHeartbeat<T>(
+  promise: Promise<T>,
+  supabase: ReturnType<typeof adminSupabase>,
+  id: string,
+  runVersion: number,
+  pct: number,
+  label: string,
+) {
+  let elapsed = 0;
+  const timer = setInterval(() => {
+    elapsed += 10;
+    const visualPct = Math.min(pct + 4, pct + Math.floor(elapsed / 15));
+    void progress(supabase, id, runVersion, visualPct, `${label} · IA trabalhando (${elapsed}s)`).catch(() => null);
+  }, 10000);
+  try {
+    return await promise;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 export default async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405);
   const supabase = adminSupabase();
@@ -303,67 +353,93 @@ export default async (req: Request) => {
     let html = materialized.generated_html || '';
     let coverUrl = materialized.cover_image_url || null;
 
-    if (cfg.cover_image !== false && !coverUrl) {
-      await progress(supabase, articleId, claimedRunVersion, 38, 'Gerando imagem de capa');
-      const cover = await generateImage({
-        prompt: `${plan.cover_image_prompt || `Capa editorial realista sobre ${materialized.generated_title || article.keyword || article.topic || 'o tema do artigo'}`}\nEstilo solicitado: ${cfg.image_style || 'fotografia editorial realista'}. Sem texto sobreposto, sem marcas d'agua.`,
-        size: cfg.image_size || '1536x1024',
-        quality: cfg.image_quality || 'medium',
-      });
-      const stored = await storeGeneratedMedia({
-        userId: article.user_id,
-        articleId,
-        title: materialized.generated_title || article.keyword || 'Artigo',
-        kind: 'cover',
-        slot: 0,
-        bytes: cover.bytes,
-        mime: cover.mime,
-        extension: cover.extension,
-        alt: plan.cover_image_alt || article.keyword || materialized.generated_title || '',
-      });
-      generatedMedia = mergeMedia(generatedMedia, stored);
-      coverUrl = stored.url;
-      await progress(supabase, articleId, claimedRunVersion, 45, 'Capa concluida', { generated_media: generatedMedia, cover_image_url: coverUrl });
-      materialized = { ...materialized, generated_media: generatedMedia, cover_image_url: coverUrl };
-    }
-
     const requestedImages = Math.max(0, Math.min(8, Number(cfg.body_images || 0)));
     const plannedImages = [...(plan.body_images || [])].sort((a, b) => a.slot - b.slot);
+    const perf = mediaPerformance(cfg);
+    const imageStyle = cfg.image_style || 'fotografia editorial realista';
+    const imageSize = cfg.image_size || '1536x1024';
+    const mediaTasks: MediaTask[] = [];
+
+    if (cfg.cover_image !== false && !coverUrl) {
+      const fallback = `Capa editorial sobre ${materialized.generated_title || article.keyword || article.topic || 'o tema do artigo'}`;
+      mediaTasks.push({
+        kind: 'cover',
+        slot: 0,
+        prompt: taskPrompt(plan.cover_image_prompt || '', fallback, imageStyle, perf.fast),
+        alt: plan.cover_image_alt || article.keyword || materialized.generated_title || '',
+      });
+    }
+
     for (let slot = 1; slot <= requestedImages; slot += 1) {
       if (generatedMedia.some((m) => m.kind === 'body' && m.slot === slot)) continue;
-      const imgPlan = plannedImages.find((item) => Number(item.slot) === slot) || {
-        slot,
-        prompt: `Imagem editorial relacionada a ${materialized.generated_title || article.keyword || 'o artigo'}, sem texto na imagem.`,
-        alt: `${article.keyword || materialized.generated_title || 'Artigo'} - imagem ${slot}`,
-      };
-      const pct = 48 + Math.round(((slot - 1) / Math.max(1, requestedImages)) * 22);
-      await progress(supabase, articleId, claimedRunVersion, pct, `Gerando imagem ${slot} de ${requestedImages}`);
-      const image = await generateImage({
-        prompt: `${imgPlan.prompt}\nEstilo solicitado: ${cfg.image_style || 'fotografia editorial realista'}. Sem texto sobreposto, sem marcas d'agua.`,
-        size: cfg.image_size || '1536x1024',
-        quality: cfg.image_quality || 'medium',
-      });
-      const stored = await storeGeneratedMedia({
-        userId: article.user_id,
-        articleId,
-        title: materialized.generated_title || article.keyword || 'Artigo',
+      const imgPlan = plannedImages.find((item) => Number(item.slot) === slot);
+      const heading = Array.isArray(materialized.outline?.headings) ? materialized.outline.headings[slot - 1]?.text : '';
+      const fallback = `Imagem editorial sobre ${heading || materialized.generated_title || article.keyword || 'o tema do artigo'}`;
+      mediaTasks.push({
         kind: 'body',
         slot,
-        bytes: image.bytes,
-        mime: image.mime,
-        extension: image.extension,
-        alt: imgPlan.alt || `${article.keyword || materialized.generated_title || 'Artigo'} - imagem ${slot}`,
+        prompt: taskPrompt(imgPlan?.prompt || '', fallback, imageStyle, perf.fast),
+        alt: imgPlan?.alt || `${article.keyword || materialized.generated_title || 'Artigo'} - imagem ${slot}`,
       });
-      generatedMedia = mergeMedia(generatedMedia, stored);
-      const marker = `[[IMAGE_${slot}]]`;
-      const figure = imageFigure(stored.url, stored.alt || materialized.generated_title || '');
-      if (!html.includes(stored.url)) html = html.includes(marker) ? html.replace(marker, figure) : `${html}\n${figure}`;
-      await progress(supabase, articleId, claimedRunVersion, Math.min(72, pct + 4), `Imagem ${slot} concluida`, { generated_media: generatedMedia, generated_html: html });
-      materialized = { ...materialized, generated_media: generatedMedia, generated_html: html };
+    }
+
+    if (mediaTasks.length) {
+      const modeLabel = perf.fast ? 'modo rapido' : perf.mode === 'balanced' ? 'modo equilibrado' : 'qualidade maxima';
+      let done = 0;
+      await progress(supabase, articleId, claimedRunVersion, 42, `Gerando ${mediaTasks.length} imagem(ns) · ${modeLabel}`);
+
+      for (let index = 0; index < mediaTasks.length; index += perf.parallelism) {
+        const batch = mediaTasks.slice(index, index + perf.parallelism);
+        const startPct = 43 + Math.round((done / mediaTasks.length) * 26);
+        const label = batch.length > 1
+          ? `Gerando ${done + 1}-${done + batch.length} de ${mediaTasks.length} imagens em paralelo`
+          : `Gerando imagem ${done + 1} de ${mediaTasks.length}`;
+        await progress(supabase, articleId, claimedRunVersion, startPct, label);
+
+        const storedBatch = await withImageHeartbeat(Promise.all(batch.map(async (task) => {
+          const image = await generateImage({
+            prompt: task.prompt,
+            size: imageSize,
+            quality: perf.quality,
+            outputFormat: 'jpeg',
+            compression: perf.compression,
+          });
+          return storeGeneratedMedia({
+            userId: article.user_id,
+            articleId,
+            title: materialized.generated_title || article.keyword || 'Artigo',
+            kind: task.kind,
+            slot: task.slot,
+            bytes: image.bytes,
+            mime: image.mime,
+            extension: image.extension,
+            alt: task.alt,
+          });
+        })), supabase, articleId, claimedRunVersion, startPct, label);
+
+        for (const stored of storedBatch) {
+          generatedMedia = mergeMedia(generatedMedia, stored);
+          if (stored.kind === 'cover') {
+            coverUrl = stored.url;
+            continue;
+          }
+          const marker = `[[IMAGE_${stored.slot}]]`;
+          const figure = imageFigure(stored.url, stored.alt || materialized.generated_title || '');
+          if (!html.includes(stored.url)) html = html.includes(marker) ? html.replace(marker, figure) : `${html}\n${figure}`;
+        }
+        done += storedBatch.length;
+        const donePct = 46 + Math.round((done / mediaTasks.length) * 27);
+        await progress(supabase, articleId, claimedRunVersion, Math.min(73, donePct), `${done} de ${mediaTasks.length} imagem(ns) pronta(s)`, {
+          generated_media: generatedMedia,
+          generated_html: html,
+          cover_image_url: coverUrl,
+        });
+        materialized = { ...materialized, generated_media: generatedMedia, generated_html: html, cover_image_url: coverUrl };
+      }
     }
 
     html = html.replace(/\[\[IMAGE_\d+\]\]/g, '');
-    await progress(supabase, articleId, claimedRunVersion, 74, 'Texto e imagens salvos', {
+    await progress(supabase, articleId, claimedRunVersion, 78, mediaTasks.length ? 'Texto e imagens prontos' : 'Texto pronto · sem imagens pendentes', {
       generated_html: html,
       generated_media: generatedMedia,
       cover_image_url: coverUrl,
@@ -371,14 +447,14 @@ export default async (req: Request) => {
     materialized = { ...materialized, generated_html: html, generated_media: generatedMedia, cover_image_url: coverUrl };
 
     if (saveToDrive && !materialized.drive_doc_url) {
-      await progress(supabase, articleId, claimedRunVersion, 82, 'Criando Google Doc');
+      await progress(supabase, articleId, claimedRunVersion, 84, 'Criando Google Doc');
       const drive = await saveArticleToDrive(materialized);
       materialized = { ...materialized, drive_file_id: drive.id, drive_doc_url: drive.url };
     }
 
     if (publishToWp && !materialized.wp_post_url) {
       if (!materialized.site_id) throw new Error('Publicacao no WordPress ativada, mas nenhum site foi selecionado.');
-      await progress(supabase, articleId, claimedRunVersion, saveToDrive ? 91 : 86, 'Publicando no WordPress');
+      await progress(supabase, articleId, claimedRunVersion, saveToDrive ? 93 : 88, 'Publicando no WordPress');
       const wp = await publishArticleToWordPress(materialized);
       materialized = { ...materialized, wp_post_id: wp.id, wp_post_url: wp.url };
     }

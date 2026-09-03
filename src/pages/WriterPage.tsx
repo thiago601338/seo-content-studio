@@ -20,7 +20,7 @@ const MIN_WORDS = 300;
 const defaultConfig: WriterConfig = {
   site_id: '', publish_to_wordpress: false, save_to_drive: false, word_count: 800, keyword_in_title: true, content_type: 'auto', search_intent: 'auto', tone: 'editorial', point_of_view: 'auto', target_country: 'Brasil', readability: 'standard',
   structure_depth: 'balanced', allow_h3: true, include_faq: false, include_takeaways: false, intro_hook: 'auto', web_research: false, reasoning_effort: 'low', model: 'gpt-5.6-terra',
-  cover_image: true, body_images: 2, image_size: '1536x1024', image_quality: 'medium', image_style: 'fotografia editorial realista', internal_links: 2, extra_links: [],
+  cover_image: true, body_images: 2, image_size: '1536x1024', image_quality: 'low', image_performance: 'fast', image_style: 'fotografia editorial realista', internal_links: 2, extra_links: [],
   include_conclusion: true, use_lists: true, use_tables: false, use_bold: true, category_id: '', author_id: '', publication_status: 'draft', schedule_start: '', interval_minutes: 0, sponsored: false, notes: '',
 };
 
@@ -31,7 +31,7 @@ export function WriterPage() {
   const [rows, setRows] = useState<ArticleDraftRow[]>([emptyRow()]);
   const [config, setConfig] = useState<WriterConfig>(() => {
     const saved = JSON.parse(localStorage.getItem('ri-writer-config') || '{}');
-    return { ...defaultConfig, ...saved, word_count: Math.max(MIN_WORDS, Math.min(MAX_WORDS, Number(saved.word_count || defaultConfig.word_count))) };
+    return { ...defaultConfig, ...saved, image_performance: saved.image_performance || 'fast', image_quality: saved.image_performance ? (saved.image_quality || defaultConfig.image_quality) : 'low', word_count: Math.max(MIN_WORDS, Math.min(MAX_WORDS, Number(saved.word_count || defaultConfig.word_count))) };
   });
   const [bulk, setBulk] = useState({ keywords: '', titles: '', support: '', topics: '', links: '' });
   const [quantity, setQuantity] = useState(1);
@@ -51,6 +51,9 @@ export function WriterPage() {
   }, []);
 
   function updateConfig<K extends keyof WriterConfig>(key: K, value: WriterConfig[K]) { setConfig((c) => ({ ...c, [key]: value })); }
+  function setImagePerformance(mode: WriterConfig['image_performance']) {
+    setConfig((c) => ({ ...c, image_performance: mode, image_quality: mode === 'fast' ? 'low' : mode === 'quality' ? 'high' : 'medium' }));
+  }
   function updateRow(localId: string, next: ArticleDraftRow) { setRows((all) => all.map((row) => row.local_id === localId ? next : row)); }
   function removeRow(localId: string) { setRows((all) => all.filter((row) => row.local_id !== localId)); }
 
@@ -239,9 +242,11 @@ export function WriterPage() {
 
           <SectionCard title="Media Hub" description="Capa e imagens geradas automaticamente." icon={<Image size={18} />} accent>
             <div className="toggle-list"><label><input type="checkbox" checked={config.cover_image} onChange={(e) => updateConfig('cover_image', e.target.checked)} /><span>Gerar imagem de capa</span></label></div>
-            <div className="two-col compact"><label className="field"><span>Imagens no corpo</span><input type="number" min={0} max={8} value={config.body_images} onChange={(e) => updateConfig('body_images', Number(e.target.value))} /></label><label className="field"><span>Qualidade</span><select value={config.image_quality} onChange={(e) => updateConfig('image_quality', e.target.value)}><option value="low">Baixa</option><option value="medium">Media</option><option value="high">Alta</option></select></label></div>
-            <label className="field"><span>Proporcao / tamanho</span><select value={config.image_size} onChange={(e) => updateConfig('image_size', e.target.value)}><option value="1536x1024">Horizontal 3:2</option><option value="1024x1024">Quadrada</option><option value="1024x1536">Vertical 2:3</option></select></label>
+            <label className="field"><span>Velocidade das imagens</span><select value={config.image_performance} onChange={(e) => setImagePerformance(e.target.value as WriterConfig['image_performance'])}><option value="fast">Rapida — recomendada</option><option value="balanced">Equilibrada</option><option value="quality">Qualidade maxima — mais lenta</option></select></label>
+            <div className="two-col compact"><label className="field"><span>Imagens no corpo</span><input type="number" min={0} max={8} value={config.body_images} onChange={(e) => updateConfig('body_images', Number(e.target.value))} /></label><label className="field"><span>Qualidade efetiva</span><select value={config.image_quality} disabled={config.image_performance === 'fast' || config.image_performance === 'quality'} onChange={(e) => updateConfig('image_quality', e.target.value)}><option value="low">Baixa / mais rapida</option><option value="medium">Media</option><option value="high">Alta / mais lenta</option></select></label></div>
+            <label className="field"><span>Proporcao / tamanho</span><select value={config.image_size} onChange={(e) => updateConfig('image_size', e.target.value)}><option value="1536x1024">Horizontal 3:2</option><option value="1024x1024">Quadrada — normalmente mais rapida</option><option value="1024x1536">Vertical 2:3</option></select></label>
             <label className="field"><span>Estilo visual</span><input value={config.image_style} onChange={(e) => updateConfig('image_style', e.target.value)} /></label>
+            <div className="mini-alert">No modo <b>Rapida</b>, o sistema usa qualidade baixa, JPEG comprimido, prompts visuais mais curtos e gera ate 2 imagens ao mesmo tempo. Para artigos e capas web, este e o modo recomendado.</div>
           </SectionCard>
 
           <SectionCard title="Estrutura e SEO" icon={<ListTree size={18} />} defaultOpen={false}>

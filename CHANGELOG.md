@@ -1,3 +1,12 @@
+# 3.1.0 — Media Hub rapido
+
+- Novo modo de imagens `Rapida` como padrao para configuracoes antigas e novas.
+- No modo rapido, usa `quality=low`, JPEG comprimido e prompts visuais mais curtos.
+- Capa e imagens internas sao processadas em blocos de ate 2 chamadas em paralelo, em vez de uma por uma.
+- O progresso da fila recebe heartbeat a cada 10 segundos enquanto a OpenAI ainda esta renderizando, evitando a sensacao de travamento em um percentual fixo.
+- Modos `Equilibrada` e `Qualidade maxima` continuam disponiveis no Media Hub.
+- Nenhuma migration nova de Supabase e necessaria.
+
 # 3.0.2
 
 - Corrige tipagem de `import.meta.env` no build Vite/TypeScript.
@@ -50,3 +59,9 @@
 - Processamento longo via Netlify Background Functions.
 - Geracao de texto com OpenAI e imagens com GPT Image.
 - Publicacao via WordPress REST API e Application Passwords.
+
+## 3.0.3
+- Corrige colisao com arquivos JSX legados no GitHub: o Vite agora prioriza TSX/TS.
+- Evita que um App.jsx antigo seja carregado no lugar do App.tsx atual.
+
+- O build agora remove automaticamente arquivos .jsx/.js legados quando existe a versao .tsx/.ts correspondente.
