@@ -1,10 +1,10 @@
 import { decryptSecret } from './crypto';
-import { buildDriveHtml } from './document';
+import { buildDriveHtml, sanitizeHeadingLinks } from './document';
 import { createGoogleDocFromHtml } from './drive';
 import type { GeneratedMedia } from './media';
 import { fetchMediaBytes } from './media';
 import { adminSupabase } from './supabase';
-import { createPost, ensureTags, uploadMedia } from './wordpress';
+import { createPost, ensureTags, updatePost, uploadMedia } from './wordpress';
 
 function replaceMediaUrls(html: string, replacements: Map<string, string>) {
   let output = html;
@@ -17,13 +17,14 @@ export async function saveArticleToDrive(article: any) {
   if (article.drive_doc_url) return { id: article.drive_file_id, url: article.drive_doc_url };
   const media = (Array.isArray(article.generated_media) ? article.generated_media : []) as GeneratedMedia[];
   const title = article.generated_title || article.requested_title || article.keyword || 'Artigo';
-  const driveHtml = buildDriveHtml({ title, html: article.generated_html || '', excerpt: article.excerpt || '', media });
+  const cleanHtml = sanitizeHeadingLinks(article.generated_html || '');
+  const driveHtml = buildDriveHtml({ title, html: cleanHtml, excerpt: article.excerpt || '', media });
   const drive = await createGoogleDocFromHtml(article.user_id, title, driveHtml, media, article.config?.image_size || '1536x1024');
-  await supabase.from('articles').update({ drive_file_id: drive.id, drive_doc_url: drive.url }).eq('id', article.id);
+  await supabase.from('articles').update({ drive_file_id: drive.id, drive_doc_url: drive.url, generated_html: cleanHtml }).eq('id', article.id);
   return drive;
 }
 
-export async function publishArticleToWordPress(article: any, requestedSiteId?: string) {
+export async function publishArticleToWordPress(article: any, requestedSiteId?: string, options: { forcePublish?: boolean } = {}) {
   const supabase = adminSupabase();
   const siteId = requestedSiteId || article.site_id;
   if (!siteId) throw new Error('Selecione um site WordPress para publicar.');
@@ -50,18 +51,19 @@ export async function publishArticleToWordPress(article: any, requestedSiteId?: 
     else if (item.url && uploaded.source_url) replacements.set(item.url, uploaded.source_url);
   }
 
-  const html = replaceMediaUrls(article.generated_html || '', replacements);
+  const html = sanitizeHeadingLinks(replaceMediaUrls(article.generated_html || '', replacements));
   const tagIds = await ensureTags(wpSite, Array.isArray(article.generated_tags) ? article.generated_tags : []);
   const availableCategoryIds = categories.map((c: any) => Number(c.id));
   let categoryId = Number(cfg.category_id || 0) || Number(site.default_category_id || 0);
   if (categoryId && availableCategoryIds.length && !availableCategoryIds.includes(categoryId)) categoryId = Number(site.default_category_id || availableCategoryIds[0] || 0);
   if (!categoryId && availableCategoryIds.length) categoryId = availableCategoryIds[0];
 
-  let wpStatus = String(cfg.publication_status || 'draft');
+  let wpStatus = options.forcePublish ? 'publish' : String(cfg.publication_status || 'publish');
   if (wpStatus === 'review') wpStatus = 'pending';
-  if (!['draft', 'pending', 'publish', 'private'].includes(wpStatus)) wpStatus = 'draft';
-  const scheduled = article.scheduled_at ? new Date(article.scheduled_at) : null;
-  const inFuture = scheduled && scheduled.getTime() > Date.now() + 60_000;
+  if (wpStatus === 'draft') wpStatus = 'publish';
+  if (!['pending', 'publish', 'private'].includes(wpStatus)) wpStatus = 'publish';
+  const scheduled = options.forcePublish ? null : (article.scheduled_at ? new Date(article.scheduled_at) : null);
+  const inFuture = Boolean(scheduled && scheduled.getTime() > Date.now() + 60_000);
   if (inFuture && wpStatus === 'publish') wpStatus = 'future';
 
   const payload: Record<string, unknown> = {
@@ -78,7 +80,11 @@ export async function publishArticleToWordPress(article: any, requestedSiteId?: 
   if (authorId) payload.author = authorId;
   if (inFuture && scheduled) payload.date_gmt = scheduled.toISOString().replace(/\.\d{3}Z$/, '');
 
-  const post = await createPost(wpSite, payload);
-  await supabase.from('articles').update({ site_id: siteId, wp_post_id: post.id, wp_post_url: post.link || site.base_url, wp_featured_media_id: featuredMediaId || null }).eq('id', article.id);
-  return { id: post.id as number, url: (post.link || site.base_url) as string };
+  let post = await createPost(wpSite, payload);
+  if (options.forcePublish && post?.status !== 'publish') {
+    post = await updatePost(wpSite, Number(post.id), { status: 'publish' });
+    if (post?.status !== 'publish') throw new Error(`O WordPress nao confirmou a publicacao. Status retornado: ${post?.status || 'desconhecido'}. Verifique se o usuario da Application Password tem permissao para publicar.`);
+  }
+  await supabase.from('articles').update({ site_id: siteId, wp_post_id: post.id, wp_post_url: post.link || site.base_url, wp_featured_media_id: featuredMediaId || null, generated_html: html }).eq('id', article.id);
+  return { id: post.id as number, url: (post.link || site.base_url) as string, status: String(post.status || wpStatus) };
 }

@@ -66,8 +66,10 @@ export function TextsPage() {
     if (!siteId) { setMessage('Cadastre ou selecione um site WordPress.'); return; }
     setBusy(`${article.id}:wp`); setMessage('');
     try {
-      await api('/api/export-article', { article_id: article.id, destination: 'wordpress', site_id: siteId });
-      setMessage('Texto enviado ao WordPress.');
+      const result = await api<{ wordpress: { id: number; url: string; status?: string } }>('/api/export-article', { article_id: article.id, destination: 'wordpress', site_id: siteId });
+      const publishedUrl = result.wordpress?.url || '';
+      setArticles((all) => all.map((item) => item.id === article.id ? { ...item, site_id: siteId, wp_post_id: result.wordpress?.id || item.wp_post_id, wp_post_url: publishedUrl || item.wp_post_url } : item));
+      setMessage(publishedUrl ? `Publicado no WordPress. Link: ${publishedUrl}` : 'Publicado no WordPress.');
       await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(''); }

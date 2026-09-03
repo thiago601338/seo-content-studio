@@ -162,3 +162,12 @@ export async function createPost(site: WPSite, payload: Record<string, unknown>)
     throw error;
   }
 }
+
+
+export async function updatePost(site: WPSite, postId: number, payload: Record<string, unknown>) {
+  const response = await wpFetch(site, `/wp-json/wp/v2/posts/${postId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return await response.json() as any;
+}

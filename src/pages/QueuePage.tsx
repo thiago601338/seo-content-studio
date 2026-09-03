@@ -1,8 +1,8 @@
-import { Cloud, ExternalLink, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Cloud, ExternalLink, Globe2, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import type { ArticleRecord } from '../lib/types';
+import type { ArticleRecord, Site } from '../lib/types';
 
 function badgeClass(status: ArticleRecord['status']) {
   if (status === 'completed') return 'green';
@@ -14,6 +14,8 @@ function badgeClass(status: ArticleRecord['status']) {
 
 export function QueuePage() {
   const [articles, setArticles] = useState<ArticleRecord[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [siteChoice, setSiteChoice] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState('');
@@ -21,8 +23,12 @@ export function QueuePage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('articles').select('*, sites(name, base_url)').order('created_at', { ascending: false }).limit(1000);
+    const [{ data }, { data: siteData }] = await Promise.all([
+      supabase.from('articles').select('*, sites(name, base_url)').order('created_at', { ascending: false }).limit(1000),
+      supabase.from('sites').select('*').eq('active', true).order('name'),
+    ]);
     setArticles((data || []) as ArticleRecord[]);
+    setSites((siteData || []) as Site[]);
     setLoading(false);
   }
 
@@ -67,6 +73,21 @@ export function QueuePage() {
     await control(article, 'resume');
   }
 
+
+  async function publish(article: ArticleRecord) {
+    const siteId = siteChoice[article.id] || article.site_id || sites[0]?.id || '';
+    if (!siteId) { setMessage('Cadastre ou selecione um site WordPress para publicar.'); return; }
+    setBusy(`${article.id}:wp`); setMessage('');
+    try {
+      const result = await api<{ wordpress: { id: number; url: string; status?: string } }>('/api/export-article', { article_id: article.id, destination: 'wordpress', site_id: siteId });
+      const publishedUrl = result.wordpress?.url || '';
+      setArticles((all) => all.map((item) => item.id === article.id ? { ...item, site_id: siteId, wp_post_id: result.wordpress?.id || item.wp_post_id, wp_post_url: publishedUrl || item.wp_post_url } : item));
+      setMessage(publishedUrl ? `Publicado. O link ja esta disponivel na coluna Publicacao: ${publishedUrl}` : 'Publicado no WordPress.');
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(''); }
+  }
+
   async function remove(article: ArticleRecord) {
     if (!window.confirm('Excluir este artigo da fila, do historico e da aba Textos? Posts ja publicados e documentos do Drive nao serao apagados.')) return;
     setBusy(`${article.id}:delete`); setMessage('');
@@ -98,14 +119,15 @@ export function QueuePage() {
         <div className="toolbar"><label className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por palavra-chave, titulo ou site" /></label><span className="muted">{visible.length} registro(s)</span></div>
         <div className="queue-table-wrap">
           <table className="queue-table">
-            <thead><tr><th>Artigo</th><th>Site</th><th>Drive</th><th>Status</th><th>Progresso</th><th>Agendamento</th><th>Acoes</th></tr></thead>
+            <thead><tr><th>Artigo</th><th>Site</th><th>Publicacao</th><th>Drive</th><th>Status</th><th>Progresso</th><th>Agendamento</th><th>Acoes</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={7}>Carregando...</td></tr>}
-              {!loading && !visible.length && <tr><td colSpan={7}>Nenhum artigo encontrado.</td></tr>}
+              {loading && <tr><td colSpan={8}>Carregando...</td></tr>}
+              {!loading && !visible.length && <tr><td colSpan={8}>Nenhum artigo encontrado.</td></tr>}
               {visible.map((article) => (
                 <tr key={article.id}>
                   <td><strong>{article.generated_title || article.keyword || 'Sem titulo'}</strong><small>{article.keyword}</small>{article.error && <em className="error-text">{article.error}</em>}</td>
                   <td>{article.sites?.name || (article.publish_to_wordpress ? 'Site pendente' : 'Somente texto')}</td>
+                  <td>{article.wp_post_url ? <a className="destination-link" href={article.wp_post_url} target="_blank" rel="noreferrer"><Globe2 size={14} /> Ver publicacao <ExternalLink size={12} /></a> : article.generated_html && ['completed', 'error'].includes(article.status) ? <div className="publish-inline"><select value={siteChoice[article.id] || article.site_id || sites[0]?.id || ''} onChange={(e) => setSiteChoice((all) => ({ ...all, [article.id]: e.target.value }))}><option value="">Escolher site</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select><button className="btn small ghost" disabled={busy === `${article.id}:wp`} onClick={() => publish(article)}>{busy === `${article.id}:wp` ? 'Publicando...' : 'Publicar'}</button></div> : '-'}</td>
                   <td>{article.drive_doc_url ? <a className="destination-link drive" href={article.drive_doc_url} target="_blank" rel="noreferrer"><Cloud size={14} /> Abrir</a> : '-'}</td>
                   <td><span className={`badge ${badgeClass(article.status)}`}>{article.progress_label || article.status}</span>{article.status === 'queued' && <small>Posicao {queuedPosition.get(article.id) || '-'}</small>}</td>
                   <td><div className="progress"><span style={{ width: `${article.progress}%` }} /></div><small>{article.progress}%</small></td>

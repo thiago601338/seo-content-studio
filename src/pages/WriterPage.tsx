@@ -21,7 +21,7 @@ const defaultConfig: WriterConfig = {
   site_id: '', publish_to_wordpress: false, save_to_drive: false, word_count: 800, keyword_in_title: true, content_type: 'auto', search_intent: 'auto', tone: 'editorial', point_of_view: 'auto', target_country: 'Brasil', readability: 'standard',
   structure_depth: 'balanced', allow_h3: true, include_faq: false, include_takeaways: false, intro_hook: 'auto', web_research: false, reasoning_effort: 'low', model: 'gpt-5.6-terra',
   cover_image: true, body_images: 2, image_size: '1536x1024', image_quality: 'low', image_performance: 'fast', image_style: 'fotografia editorial realista', internal_links: 2, extra_links: [],
-  include_conclusion: true, use_lists: true, use_tables: false, use_bold: true, category_id: '', author_id: '', publication_status: 'draft', schedule_start: '', interval_minutes: 0, sponsored: false, notes: '',
+  include_conclusion: true, use_lists: true, use_tables: false, use_bold: true, category_id: '', author_id: '', publication_status: 'publish', schedule_start: '', interval_minutes: 0, sponsored: false, notes: '',
 };
 
 export function WriterPage() {
@@ -31,7 +31,7 @@ export function WriterPage() {
   const [rows, setRows] = useState<ArticleDraftRow[]>([emptyRow()]);
   const [config, setConfig] = useState<WriterConfig>(() => {
     const saved = JSON.parse(localStorage.getItem('ri-writer-config') || '{}');
-    return { ...defaultConfig, ...saved, image_performance: saved.image_performance || 'fast', image_quality: saved.image_performance ? (saved.image_quality || defaultConfig.image_quality) : 'low', word_count: Math.max(MIN_WORDS, Math.min(MAX_WORDS, Number(saved.word_count || defaultConfig.word_count))) };
+    return { ...defaultConfig, ...saved, publication_status: saved.publication_status === 'draft' ? 'publish' : (saved.publication_status || 'publish'), image_performance: saved.image_performance || 'fast', image_quality: saved.image_performance ? (saved.image_quality || defaultConfig.image_quality) : 'low', word_count: Math.max(MIN_WORDS, Math.min(MAX_WORDS, Number(saved.word_count || defaultConfig.word_count))) };
   });
   const [bulk, setBulk] = useState({ keywords: '', titles: '', support: '', topics: '', links: '' });
   const [quantity, setQuantity] = useState(1);
@@ -263,7 +263,7 @@ export function WriterPage() {
             {config.publish_to_wordpress && <>
               <label className="field"><span>Categoria</span><select value={config.category_id} onChange={(e) => updateConfig('category_id', e.target.value ? Number(e.target.value) : '')}><option value="">Automatica / padrao</option>{selectedSite?.metadata?.categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
               <label className="field"><span>Autor</span><select value={config.author_id} onChange={(e) => updateConfig('author_id', e.target.value ? Number(e.target.value) : '')}><option value="">Padrao do site</option>{selectedSite?.metadata?.authors?.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-              <label className="field"><span>Status no WordPress</span><select value={config.publication_status} onChange={(e) => updateConfig('publication_status', e.target.value as WriterConfig['publication_status'])}><option value="draft">Rascunho</option><option value="review">Pendente de revisao</option><option value="publish">Publicar / agendar</option><option value="private">Privado</option></select></label>
+              <label className="field"><span>Status no WordPress</span><select value={config.publication_status} onChange={(e) => updateConfig('publication_status', e.target.value as WriterConfig['publication_status'])}><option value="publish">Publicar imediatamente / agendar</option><option value="review">Pendente de revisao</option><option value="private">Privado</option></select></label>
               <label className="field"><span>Comecar em (opcional)</span><input type="datetime-local" value={config.schedule_start} onChange={(e) => updateConfig('schedule_start', e.target.value)} /></label>
               <label className="field"><span>Intervalo entre artigos (minutos)</span><input type="number" min={0} value={config.interval_minutes} onChange={(e) => updateConfig('interval_minutes', Number(e.target.value))} /></label>
               <div className="toggle-list"><label><input type="checkbox" checked={config.sponsored} onChange={(e) => updateConfig('sponsored', e.target.checked)} /><span>Conteudo patrocinado / publieditorial</span></label></div>

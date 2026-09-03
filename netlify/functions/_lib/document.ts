@@ -8,8 +8,17 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+
+export function sanitizeHeadingLinks(html: string) {
+  return (html || '').replace(/<(h[1-6])(\s[^>]*)?>([\s\S]*?)<\/\1>/gi, (_full, tag: string, attrs: string = '', inner: string) => {
+    const withoutAnchors = inner.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '$1');
+    const withoutVisibleUrls = withoutAnchors.replace(/https?:\/\/[^\s<]+/gi, '').replace(/\s{2,}/g, ' ').trim();
+    return `<${tag}${attrs || ''}>${withoutVisibleUrls}</${tag}>`;
+  });
+}
+
 export function buildDriveHtml(input: { title: string; html: string; excerpt?: string | null; media: GeneratedMedia[] }) {
-  let body = input.html || '';
+  let body = sanitizeHeadingLinks(input.html || '');
   const bodyMedia = input.media.filter((item) => item.kind === 'body').sort((a, b) => a.slot - b.slot);
   for (const media of bodyMedia) {
     const marker = `[[RI_MEDIA_${media.slot}]]`;

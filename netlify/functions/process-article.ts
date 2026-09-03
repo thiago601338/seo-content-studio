@@ -1,6 +1,7 @@
 import { userOrInternal } from './_lib/auth';
 import { decryptSecret } from './_lib/crypto';
 import { publishArticleToWordPress, saveArticleToDrive } from './_lib/destinations';
+import { sanitizeHeadingLinks } from './_lib/document';
 import { errorMessage, json, readJson } from './_lib/http';
 import { generateImage, structuredResponse } from './_lib/openai';
 import { storeGeneratedMedia, type GeneratedMedia } from './_lib/media';
@@ -38,6 +39,7 @@ function injectAnchor(html: string, anchor: string, url: string) {
   if (!anchor || !url || html.includes(`href="${url}"`) || html.includes(`href='${url}'`)) return html;
   const parts = html.split(/(<[^>]+>)/g);
   let insideAnchor = 0;
+  let insideHeading = 0;
   const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(escaped, 'i');
   for (let i = 0; i < parts.length; i += 1) {
@@ -45,9 +47,11 @@ function injectAnchor(html: string, anchor: string, url: string) {
     if (part.startsWith('<')) {
       if (/^<a\b/i.test(part)) insideAnchor += 1;
       if (/^<\/a\b/i.test(part)) insideAnchor = Math.max(0, insideAnchor - 1);
+      if (/^<h[1-6]\b/i.test(part)) insideHeading += 1;
+      if (/^<\/h[1-6]\b/i.test(part)) insideHeading = Math.max(0, insideHeading - 1);
       continue;
     }
-    if (insideAnchor || !regex.test(part)) continue;
+    if (insideAnchor || insideHeading || !regex.test(part)) continue;
     parts[i] = part.replace(regex, (match) => `<a href="${escapeHtml(url)}">${match}</a>`);
     return parts.join('');
   }
@@ -311,7 +315,7 @@ export default async (req: Request) => {
         model: cfg.model || undefined,
       });
 
-      let html = trimHtmlToWords(generated.body_html || '', 800);
+      let html = trimHtmlToWords(sanitizeHeadingLinks(generated.body_html || ''), 800);
       if (article.keyword && article.target_url) html = injectAnchor(html, article.keyword, article.target_url);
       for (const pair of Array.isArray(cfg.extra_links) ? cfg.extra_links : []) {
         if (pair?.anchor && pair?.url) html = injectAnchor(html, String(pair.anchor), String(pair.url));
@@ -350,7 +354,7 @@ export default async (req: Request) => {
 
     const plan = (materialized.generation_plan || {}) as GenerationPlan;
     let generatedMedia = (Array.isArray(materialized.generated_media) ? materialized.generated_media : []) as GeneratedMedia[];
-    let html = materialized.generated_html || '';
+    let html = sanitizeHeadingLinks(materialized.generated_html || '');
     let coverUrl = materialized.cover_image_url || null;
 
     const requestedImages = Math.max(0, Math.min(8, Number(cfg.body_images || 0)));

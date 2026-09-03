@@ -13,7 +13,7 @@ export default async (req: Request) => {
     if (error || !article) return json({ error: 'Texto nao encontrado.' }, 404);
     if (!article.generated_html) return json({ error: 'O texto ainda nao foi gerado.' }, 409);
     if (body.destination === 'drive') return json({ ok: true, drive: await saveArticleToDrive(article) });
-    if (body.destination === 'wordpress') return json({ ok: true, wordpress: await publishArticleToWordPress(article, body.site_id) });
+    if (body.destination === 'wordpress') return json({ ok: true, wordpress: await publishArticleToWordPress(article, body.site_id, { forcePublish: true }) });
     return json({ error: 'Destino invalido.' }, 422);
   } catch (error) {
     return json({ error: errorMessage(error) }, 500);

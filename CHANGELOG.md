@@ -1,3 +1,12 @@
+# 3.1.1
+
+- Publicacao manual pelo painel agora força `status=publish` no WordPress e confirma o status retornado.
+- O padrao de novos lotes passou de rascunho para publicacao. Preferencias antigas salvas como `draft` migram para `publish`.
+- Fila e historico ganhou coluna Publicacao com botao Publicar e link Ver publicacao exibido assim que o WordPress responde.
+- Aba Textos atualiza o link da publicacao imediatamente apos o clique em Publicar.
+- Links e URLs visiveis sao removidos de H1-H6 antes de salvar no Google Docs ou enviar ao WordPress.
+- A injecao automatica da palavra-chave agora ignora headings, evitando URLs estranhas nos subtitulos.
+
 # 3.1.0 — Media Hub rapido
 
 - Novo modo de imagens `Rapida` como padrao para configuracoes antigas e novas.
