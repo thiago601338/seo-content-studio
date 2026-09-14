@@ -47,7 +47,7 @@ export type TextGenerationInput = {
 
 export async function structuredResponse<T>(options: TextGenerationInput): Promise<T> {
   const payload: Record<string, unknown> = {
-    model: options.model || process.env.OPENAI_TEXT_MODEL || 'gpt-5.6-terra',
+    model: options.model || process.env.OPENAI_TEXT_MODEL || 'gpt-5.6-luna',
     instructions: options.instructions,
     input: options.input,
     reasoning: { effort: options.reasoningEffort || 'low' },
